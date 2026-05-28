@@ -4,28 +4,27 @@
 
 ```mermaid
 erDiagram
-    sites ||--o{ submissions : "has"
+    sites ||--o{ submissions : has
     
     sites {
-        INTEGER id PK
-        TEXT site_name
-        TEXT site_url UNIQUE
-        TEXT site_type
-        INTEGER weight
-        TEXT language
-        TEXT category
-        TEXT notes
-        TEXT created_at
+        int id PK
+        string site_name
+        string site_url "unique"
+        string site_type
+        int weight
+        string language
+        string category
+        string notes
+        datetime created_at
     }
     
     submissions {
-        INTEGER id PK
-        INTEGER site_id FK
-        TEXT project_name
-        TEXT status
-        TEXT notes
-        TEXT updated_at
-        UNIQUE(site_id, project_name)
+        int id PK
+        int site_id FK
+        string project_name
+        string status
+        string notes
+        datetime updated_at
     }
 ```
 
