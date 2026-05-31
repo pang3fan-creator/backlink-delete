@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""backlinks管理工具：数据库 ↔ Excel 双向同步"""
+"""backlinks管理工具：数据库 ↔ Excel 双向同步（安全合并模式）"""
 
 import sqlite3
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
 from datetime import datetime
 import sys
+import os
 
 DB_PATH = 'backlinks.db'
 EXCEL_PATH = 'backlinks.xlsx'
@@ -20,7 +21,14 @@ def now():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 def export():
-    """数据库 → Excel"""
+    """
+    数据库 → Excel（安全合并模式）
+    
+    规则：
+    - Excel 有值 → 保留，不动
+    - Excel 无值、数据库有值 → 写入
+    - 新站点 → 添加新行
+    """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -37,14 +45,59 @@ def export():
 
     # 获取所有提交记录
     cursor.execute('SELECT site_id, project_name, status FROM submissions')
-    subs = {}
+    db_subs = {}
     for sid, proj, status in cursor.fetchall():
-        subs[(sid, proj)] = status
+        db_subs[(sid, proj)] = status
     conn.close()
 
+    # 读取现有 Excel 数据（如果存在）
+    excel_subs = {}  # (site_url, project) -> status
+    excel_site_info = {}  # site_url -> {name, type, category, weight, language}
+    
+    if os.path.exists(EXCEL_PATH):
+        try:
+            wb_old = openpyxl.load_workbook(EXCEL_PATH)
+            ws_old = wb_old.active
+            old_headers = [cell.value for cell in ws_old[1]]
+            old_projects = [h for h in old_headers[6:] if h]
+            
+            for row in ws_old.iter_rows(min_row=2, values_only=True):
+                site_url = str(row[1]).strip().lower() if row[1] else ''
+                if not site_url:
+                    continue
+                
+                # 保存站点信息
+                excel_site_info[site_url] = {
+                    'name': row[0],
+                    'type': row[2],
+                    'category': row[3],
+                    'weight': row[4],
+                    'language': row[5]
+                }
+                
+                # 保存提交状态
+                for proj_idx, proj in enumerate(old_projects):
+                    col = 6 + proj_idx
+                    if col < len(row) and row[col]:
+                        excel_subs[(site_url, proj)] = str(row[col]).strip()
+            
+            wb_old.close()
+            print(f'📖 读取现有 Excel: {len(excel_site_info)} 个站点, {len(excel_subs)} 条提交记录')
+        except Exception as e:
+            print(f'⚠️ 读取 Excel 失败: {e}，将创建新文件')
+            excel_subs = {}
+            excel_site_info = {}
+
+    # 创建新 Excel
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = '提交总表'
+
+    # 建立 site_url -> site_id 映射
+    site_url_to_id = {site[2].lower(): site[0] for site in sites}
+    
+    # 建立反向映射
+    site_id_to_url = {site[0]: site[2].lower() for site in sites}
 
     headers = ['站点名称', '提交地址', '类型', '分类', '权重', '语言'] + list(projects)
     for col, header in enumerate(headers, 1):
@@ -53,8 +106,13 @@ def export():
         cell.fill = BLUE
         cell.alignment = Alignment(horizontal='center')
 
+    merged_count = 0
+    preserved_count = 0
+
     for row_idx, site in enumerate(sites, 2):
         sid, name, url, stype, cat, weight, lang = site
+        site_url = url.lower()
+        
         ws.cell(row=row_idx, column=1, value=name or '')
         ws.cell(row=row_idx, column=2, value=url or '')
         ws.cell(row=row_idx, column=3, value=stype or '')
@@ -64,7 +122,22 @@ def export():
         
         for proj_idx, proj in enumerate(projects):
             col = 7 + proj_idx
-            status = subs.get((sid, proj), '')
+            
+            # 优先使用 Excel 中的值（主人手动填的优先）
+            excel_status = excel_subs.get((site_url, proj), '')
+            db_status = db_subs.get((sid, proj), '')
+            
+            if excel_status:
+                # Excel 有值，保留
+                status = excel_status
+                preserved_count += 1
+            elif db_status:
+                # Excel 无值，数据库有值，写入
+                status = db_status
+                merged_count += 1
+            else:
+                status = ''
+            
             cell = ws.cell(row=row_idx, column=col, value=status)
             cell.alignment = Alignment(horizontal='center')
             if status == '已提交':
@@ -82,10 +155,21 @@ def export():
     wb.save(EXCEL_PATH)
     print(f'✅ 导出成功: {EXCEL_PATH}')
     print(f'   站点: {len(sites)} 个, 项目: {len(projects)} 个')
-    print(f'   编辑后运行: python3 bl.py import')
+    print(f'   保留 Excel 数据: {preserved_count} 条')
+    print(f'   合并数据库数据: {merged_count} 条')
 
 def import_from_excel():
-    """Excel → 数据库"""
+    """
+    Excel → 数据库（安全模式）
+    
+    规则：
+    - Excel 有值 → UPSERT 进数据库
+    - Excel 无值 → 跳过，不删除数据库记录
+    """
+    if not os.path.exists(EXCEL_PATH):
+        print(f'❌ Excel 文件不存在: {EXCEL_PATH}')
+        return
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('PRAGMA foreign_keys = ON')
@@ -100,6 +184,7 @@ def import_from_excel():
     # 从第2行开始
     updated = 0
     added = 0
+    skipped = 0
     now_ts = now()
 
     for row in ws.iter_rows(min_row=2, values_only=True):
@@ -110,17 +195,21 @@ def import_from_excel():
         # 确保站点存在
         cursor.execute('INSERT OR IGNORE INTO sites (site_url, created_at) VALUES (?, ?)',
                       (site_url, now_ts))
+        
         # 更新站点信息
         site_name = str(row[0]).strip() if row[0] else ''
-
-        cursor.execute('''UPDATE sites SET site_name = ? WHERE site_url = ?''',
+        cursor.execute('UPDATE sites SET site_name = ? WHERE site_url = ?',
                       (site_name, site_url))
         if row[2]:
             cursor.execute('UPDATE sites SET site_type = ? WHERE site_url = ?', (row[2], site_url))
         if row[3]:
             cursor.execute('UPDATE sites SET category = ? WHERE site_url = ?', (row[3], site_url))
         if row[4]:
-            cursor.execute('UPDATE sites SET weight = ? WHERE site_url = ?', (int(row[4]) if row[4] else None, site_url))
+            try:
+                weight = int(row[4]) if row[4] else None
+                cursor.execute('UPDATE sites SET weight = ? WHERE site_url = ?', (weight, site_url))
+            except:
+                pass
         if row[5]:
             cursor.execute('UPDATE sites SET language = ? WHERE site_url = ?', (row[5], site_url))
         
@@ -131,16 +220,17 @@ def import_from_excel():
         for proj_idx, proj in enumerate(projects):
             col = 6 + proj_idx
             status = str(row[col]).strip() if col < len(row) and row[col] else ''
+            
             if status:
+                # Excel 有值，UPSERT 进数据库
                 cursor.execute('''
                     INSERT INTO submissions (site_id, project_name, status, updated_at) 
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(site_id, project_name) DO UPDATE SET status=?, updated_at=?
                 ''', (site_id, proj, status, now_ts, status, now_ts))
                 updated += 1
-            else:
-                cursor.execute('DELETE FROM submissions WHERE site_id=? AND project_name=?',
-                              (site_id, proj))
+            # Excel 无值，跳过，不删除数据库记录
+            # （移除了原来的 DELETE 逻辑）
 
     conn.commit()
 
@@ -153,12 +243,54 @@ def import_from_excel():
     print(f'✅ 导入成功!')
     print(f'   更新/新增提交记录: {updated} 条')
     print(f'   数据库站点: {sites_count} 个, 提交记录: {subs_count} 条')
+    print(f'   💡 空单元格已跳过，未删除数据库记录')
+
+def stats():
+    """查看统计信息"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT COUNT(*) FROM sites')
+    sites_count = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM submissions')
+    subs_count = cursor.fetchone()[0]
+    
+    cursor.execute('''
+        SELECT category, COUNT(*) 
+        FROM sites 
+        WHERE category IS NOT NULL 
+        GROUP BY category
+    ''')
+    categories = cursor.fetchall()
+    
+    cursor.execute('''
+        SELECT project_name, COUNT(*) 
+        FROM submissions 
+        GROUP BY project_name
+    ''')
+    projects = cursor.fetchall()
+    
+    conn.close()
+    
+    print(f'📊 数据库统计')
+    print(f'   站点总数: {sites_count}')
+    print(f'   提交记录: {subs_count}')
+    print()
+    print('站点分类:')
+    for cat, count in categories:
+        print(f'   {cat}: {count}')
+    print()
+    print('项目提交:')
+    for proj, count in projects:
+        print(f'   {proj}: {count}')
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('用法:')
-        print('  python3 bl.py export   → 数据库 → Excel')
-        print('  python3 bl.py import   → Excel → 数据库')
+        print('  python3 bl.py export   → 数据库 → Excel（安全合并）')
+        print('  python3 bl.py import   → Excel → 数据库（安全模式）')
+        print('  python3 bl.py stats    → 查看统计')
         sys.exit(0)
     
     cmd = sys.argv[1]
@@ -166,5 +298,7 @@ if __name__ == '__main__':
         export()
     elif cmd == 'import':
         import_from_excel()
+    elif cmd == 'stats':
+        stats()
     else:
-        print('未知命令，使用: export 或 import')
+        print('未知命令，使用: export, import, stats')
