@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-06-01",
+  "contact_email": "pang3fan@gmail.com",
+  "projects": {
+    "extractkeywords": {
+      "domain": "extractkeywords.com",
+      "name": "extractkeywords",
+      "category": "tool",
+      "short_desc": "Free online keyword extraction tool",
+      "tags": ["keyword extractor", "text analysis", "SEO tool", "NLP tool"]
+    },
+    "tryschedule": {
+      "domain": "tryschedule.com",
+      "name": "tryschedule",
+      "category": "tool",
+      "short_desc": "Free online schedule builder and planner",
+      "tags": ["schedule builder", "planner", "time management", "productivity tool"]
+    },
+    "heicpdf": {
+      "domain": "heicpdf.to",
+      "name": "heicpdf",
+      "category": "tool",
+      "short_desc": "Free online HEIC to PDF converter",
+      "tags": ["HEIC converter", "PDF converter", "image converter", "file converter"]
+    }
+  },
+  "submission_strategies": {
+    "directory": {
+      "fields_required": ["name", "url", "email", "description"],
+      "notes": "标准目录提交，填写固定模板即可"
+    },
+    "blog_comment": {
+      "fields_required": ["name", "email", "comment", "url"],
+      "notes": "必须阅读文章内容，生成相关评论，自然插入链接"
+    },
+    "ai_tools_directory": {
+      "fields_required": ["name", "url", "email", "description", "tags"],
+      "notes": "AI工具目录，强调工具功能和免费使用"
+    }
+  },
+  "verification": {
+    "method": "daily_email_check",
+    "gmail_task_time": "6:30",
+    "keywords_to_watch": ["approved", "rejected", "pending", "verification", "confirm", "submitted"]
+  }
+}

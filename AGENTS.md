@@ -1,65 +1,107 @@
-# Backlink 提交指南
+# Backlink 提交 SOP
 
 > 素贞使用 CloakBrowser 提交外链的操作手册
 
 ---
 
-## 一、项目概述
+## 一、标准信息（必填）
 
-**目标**：为主人的多个网站项目提交外链，提升 SEO 权重。
+**配置文件**：`project-config.json`
 
-**数据库**：`backlinks.db` — 所有站点和提交记录
+### 统一联系方式
 
-**工具**：CloakBrowser（绕过基础反爬检测）
+| 字段 | 值 |
+|------|-----|
+| **邮箱** | pang3fan@gmail.com |
+| **用途** | 接收审核通知、确认邮件、站长回复 |
+
+### 三个项目标准信息
+
+| 项目 | 名称 | 域名 | 一句话描述 |
+|------|------|------|-----------|
+| extractkeywords | extractkeywords | extractkeywords.com | Free online keyword extraction tool |
+| tryschedule | tryschedule | tryschedule.com | Free online schedule builder and planner |
+| heicpdf | heicpdf | heicpdf.to | Free online HEIC to PDF converter |
+
+**标签**：工具类、免费、在线工具
 
 ---
 
-## 二、快速开始
+## 二、提交 SOP
 
-### 1. 查看待提交站点
+### 提交前检查
 
-```bash
-# 查看可自动提交的站点
-python3 bl.py export  # 导出 Excel 查看
+- [ ] 读取 `project-config.json` 获取标准信息
+- [ ] **邮箱必须填写** — pang3fan@gmail.com
+- [ ] 确认站点可访问（无 404/500）
+- [ ] 确认无验证码或已准备好处理方案
 
-# 或直接查询数据库
-python3 -c "
-import sqlite3
-conn = sqlite3.connect('backlinks.db')
-cursor = conn.cursor()
-cursor.execute('''
-    SELECT site_name, site_url, weight FROM sites 
-    WHERE category = \"✅ 可自动提交\" 
-    ORDER BY weight DESC NULLS LAST LIMIT 10
-''')
-for row in cursor.fetchall():
-    print(f'{row[0]}: {row[1]} (权重: {row[2]})')
-conn.close()
-"
-```
+### 提交时
 
-### 2. 提交一个站点
+| 站点类型 | 策略 | 必填字段 |
+|---------|------|---------|
+| **目录站点** | 使用标准模板 | name, url, email, description |
+| **AI工具目录** | 强调免费+功能 | name, url, email, description, tags |
+| **博客评论** | **必须读文章**，生成相关评论，自然插入链接 | name, email, comment, url |
+| **搜索引擎提交** | 简洁填写 | url, email |
+
+### 博客评论特殊处理
 
 ```python
-from cloakbrowser import launch
+# 1. 先读取文章内容
+article_title = page.title()
+article_content = page.content()
 
-browser = launch(headless=True, proxy="http://127.0.0.1:7890")
-page = browser.new_page()
-page.goto("https://example.com/submit")
-# 填表、提交...
-browser.close()
+# 2. 根据文章生成相关评论
+# 3. 自然插入链接（不要硬广）
+# 4. 示例：
+# "Great insights on [文章主题]! I found this particularly useful for [具体点]. 
+#  By the way, I've been using [工具名] for [相关用途], highly recommend checking it out."
 ```
 
-### 3. 记录提交结果
+### 提交后记录
 
 ```bash
-# 更新数据库
-python3 bl.py add-submission <site_id> <project_name> <status>
+# 记录到数据库
+python3 bl.py add-submission <site_id> <project> <status> [--notes "备注"]
+```
+
+**状态定义**：
+- `已提交` — 表单提交成功
+- `待审核` — 明确提示需要审核
+- `失败` — 表单提交失败
+- `需登录` — 需要账号
+- `需付费` — 需要付费
+
+---
+
+## 三、验证机制
+
+### 每日邮件检查（6:30 任务）
+
+素贞每天早上读 Gmail，**特别关注**：
+
+| 关键词 | 含义 | 后续动作 |
+|--------|------|---------|
+| approved, accepted, listed | 外链已通过 | 标记为「✅ 已收录」 |
+| rejected, declined | 外链被拒绝 | 记录原因，分析问题 |
+| pending, waiting | 待审核 | 等待后续通知 |
+| verification, confirm | 需要验证 | 点击验证链接 |
+| link required | 需要反向链接 | 告知主人决定 |
+
+### 验证流程
+
+```
+1. 每日 6:30 读取 Gmail
+2. 搜索关键词：站点名 + 项目名
+3. 提取审核结果
+4. 更新数据库状态
+5. 如需人工处理 → 通知主人
 ```
 
 ---
 
-## 三、站点分类
+## 四、站点分类处理
 
 | 分类 | 说明 | 处理方式 |
 |------|------|---------|
@@ -71,58 +113,7 @@ python3 bl.py add-submission <site_id> <project_name> <status>
 
 ---
 
-## 四、提交流程
-
-### 标准流程
-
-```
-1. 预检查 → 确认站点可访问
-2. 打开页面 → CloakBrowser 访问提交页
-3. 识别表单 → 找到输入字段
-4. 填写信息 → 使用项目模板数据
-5. 处理验证码 → Turnstile/reCAPTCHA 无法自动通过
-6. 提交表单 → 点击提交按钮
-7. 验证结果 → 确认成功/失败
-8. 记录数据库 → 更新提交状态
-```
-
-### 预检查清单
-
-- [ ] 站点是否能访问？（避免 404/500）
-- [ ] 是否需要登录？
-- [ ] 是否有验证码？
-- [ ] 是否需要上传文件？
-
----
-
-## 五、博客评论策略
-
-**优势**：无验证码、无登录、有 URL 字段
-
-### 适用站点特征
-
-- WordPress 博客（评论区有 URL 字段）
-- 影视/娱乐/技术类博客
-- 审核相对宽松
-
-### 评论模板
-
-```
-Great article! I really enjoyed your analysis of [主题].
-The points about [具体内容] were particularly insightful.
-By the way, for anyone interested in [相关话题], 
-check out this free tool: [URL]
-```
-
-### 注意事项
-
-- 评论内容要与文章相关
-- 不要太明显是广告
-- 可能需要等待审核
-
----
-
-## 六、障碍处理
+## 五、障碍处理
 
 | 障碍 | 说明 | 解决方案 |
 |------|------|---------|
@@ -134,32 +125,7 @@ check out this free tool: [URL]
 
 ---
 
-## 七、项目模板
-
-每个网站项目在 `templates/` 目录下有一个模板文件：
-
-```markdown
-# 项目名 提交模板
-
-## 基本信息
-
-| 项目 | 内容 |
-|------|------|
-| 网站名称 | ... |
-| 网址 | ... |
-| 一句话描述 | ... |
-| 详细描述 | ... |
-| 标签/Tags | ... |
-| 类别 | ... |
-
-## 提交用链接
-
-- 首页：...
-```
-
----
-
-## 八、常用命令
+## 六、常用命令
 
 ```bash
 # 导出 Excel 查看
@@ -177,53 +143,15 @@ python3 bl.py add-submission <site_id> <project> <status>
 
 ---
 
-## 九、成功率统计
+## 七、注意事项
 
-| 类型 | 成功率 | 说明 |
-|------|-------|------|
-| 博客评论 | ~60% | 需找开放评论的博客 |
-| 目录提交 | ~20% | 多数有验证码/付费门槛 |
-| Profile 页面 | ~10% | 需注册+验证码 |
-
----
-
-## 十、最佳实践
-
-1. **先测试后批量**：新站点先测试一次，确认可提交再批量
-2. **控制频率**：每次提交间隔 1-3 分钟，避免被封
-3. **记录详细**：失败要记录原因，方便后续优化
-4. **定期清理**：删除失效站点，更新站点状态
-5. **优先高质量**：优先提交权重高、相关性强的站点
+1. **邮箱千万别落下** — pang3fan@gmail.com
+2. **博客评论必须读文章** — 生成相关内容，自然插入链接
+3. **一站点三项目** — 发现可提交站点，立即为三个项目都提交
+4. **记录详细** — 失败要记录原因，方便后续优化
+5. **定期验证** — 通过邮件追踪审核结果
 
 ---
 
-## 附录：CloakBrowser 使用
-
-```python
-from cloakbrowser import launch
-
-# 启动浏览器
-browser = launch(
-    headless=True,           # 无头模式
-    proxy="http://127.0.0.1:7890"  # 代理
-)
-
-# 打开页面
-page = browser.new_page()
-page.goto("https://example.com", timeout=30000)
-
-# 截图
-page.screenshot(path="screenshot.png")
-
-# 获取内容
-content = page.content()
-title = page.title()
-
-# 关闭
-browser.close()
-```
-
----
-
-**文档版本**: v1.0  
-**最后更新**: 2026-05-31
+**文档版本**: v2.0  
+**最后更新**: 2026-06-01
