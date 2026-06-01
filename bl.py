@@ -11,14 +11,28 @@ import os
 DB_PATH = 'backlinks.db'
 EXCEL_PATH = 'backlinks.xlsx'
 
+# 允许的提交状态（数据库有 CHECK 约束，此列表保持一致）
+VALID_STATUSES = ['已提交', '失败', '需付费', '需登录']
+
 # 颜色
 GREEN = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
 YELLOW = PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid')
 RED = PatternFill(start_color='FCE4EC', end_color='FCE4EC', fill_type='solid')
 BLUE = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
 
+
 def now():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def validate_status(status):
+    """验证状态是否合法"""
+    if status not in VALID_STATUSES:
+        print(f'❌ 非法状态: "{status}"')
+        print(f'   允许的状态: {", ".join(VALID_STATUSES)}')
+        return False
+    return True
+
 
 def export():
     """
@@ -158,6 +172,7 @@ def export():
     print(f'   保留 Excel 数据: {preserved_count} 条')
     print(f'   合并数据库数据: {merged_count} 条')
 
+
 def import_from_excel():
     """
     Excel → 数据库（安全模式）
@@ -185,6 +200,7 @@ def import_from_excel():
     updated = 0
     added = 0
     skipped = 0
+    invalid = 0
     now_ts = now()
 
     for row in ws.iter_rows(min_row=2, values_only=True):
@@ -222,6 +238,9 @@ def import_from_excel():
             status = str(row[col]).strip() if col < len(row) and row[col] else ''
             
             if status:
+                if not validate_status(status):
+                    invalid += 1
+                    continue
                 # Excel 有值，UPSERT 进数据库
                 cursor.execute('''
                     INSERT INTO submissions (site_id, project_name, status, updated_at) 
@@ -230,7 +249,6 @@ def import_from_excel():
                 ''', (site_id, proj, status, now_ts, status, now_ts))
                 updated += 1
             # Excel 无值，跳过，不删除数据库记录
-            # （移除了原来的 DELETE 逻辑）
 
     conn.commit()
 
@@ -242,8 +260,65 @@ def import_from_excel():
 
     print(f'✅ 导入成功!')
     print(f'   更新/新增提交记录: {updated} 条')
+    if invalid:
+        print(f'   ⚠️ 跳过非法状态: {invalid} 条（仅允许: {", ".join(VALID_STATUSES)}）')
     print(f'   数据库站点: {sites_count} 个, 提交记录: {subs_count} 条')
     print(f'   💡 空单元格已跳过，未删除数据库记录')
+
+
+def add_submission():
+    """添加/更新提交记录"""
+    if len(sys.argv) < 4:
+        print('用法: python3 bl.py add-submission <site_id> <project> <status> [--notes "备注"]')
+        print(f'状态可选: {", ".join(VALID_STATUSES)}')
+        sys.exit(1)
+    
+    site_id = sys.argv[2]
+    project = sys.argv[3]
+    status = sys.argv[4]
+    
+    # 提取备注（如果有）
+    notes = ''
+    if '--notes' in sys.argv:
+        idx = sys.argv.index('--notes')
+        if idx + 1 < len(sys.argv):
+            notes = sys.argv[idx + 1]
+    
+    # 校验状态
+    if not validate_status(status):
+        sys.exit(1)
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('PRAGMA foreign_keys = ON')
+    now_ts = now()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO submissions (site_id, project_name, status, notes, updated_at) 
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(site_id, project_name) DO UPDATE SET status=?, notes=?, updated_at=?
+        ''', (site_id, project, status, notes, now_ts, status, notes, now_ts))
+        conn.commit()
+        
+        # 查询站点名用于展示
+        cursor.execute('SELECT site_name, site_url FROM sites WHERE id = ?', (site_id,))
+        site = cursor.fetchone()
+        site_label = site[0] or site[1] if site else f'id={site_id}'
+        
+        print(f'✅ 提交记录已保存')
+        print(f'   站点: {site_label}')
+        print(f'   项目: {project}')
+        print(f'   状态: {status}')
+        if notes:
+            print(f'   备注: {notes}')
+    except sqlite3.IntegrityError as e:
+        print(f'❌ 数据库错误: {e}')
+        conn.rollback()
+        sys.exit(1)
+    finally:
+        conn.close()
+
 
 def stats():
     """查看统计信息"""
@@ -271,11 +346,22 @@ def stats():
     ''')
     projects = cursor.fetchall()
     
+    cursor.execute('''
+        SELECT status, COUNT(*) 
+        FROM submissions 
+        GROUP BY status
+    ''')
+    statuses = cursor.fetchall()
+    
     conn.close()
     
     print(f'📊 数据库统计')
     print(f'   站点总数: {sites_count}')
     print(f'   提交记录: {subs_count}')
+    print()
+    print('提交状态:')
+    for status, count in statuses:
+        print(f'   {status}: {count}')
     print()
     print('站点分类:')
     for cat, count in categories:
@@ -285,12 +371,15 @@ def stats():
     for proj, count in projects:
         print(f'   {proj}: {count}')
 
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('用法:')
-        print('  python3 bl.py export   → 数据库 → Excel（安全合并）')
-        print('  python3 bl.py import   → Excel → 数据库（安全模式）')
-        print('  python3 bl.py stats    → 查看统计')
+        print('  python3 bl.py export                    → 数据库 → Excel（安全合并）')
+        print('  python3 bl.py import                    → Excel → 数据库（安全模式）')
+        print('  python3 bl.py add-submission <id> <project> <status> [--notes "备注"]  → 添加/更新提交记录')
+        print(f'    状态可选: {", ".join(VALID_STATUSES)}')
+        print('  python3 bl.py stats                     → 查看统计')
         sys.exit(0)
     
     cmd = sys.argv[1]
@@ -298,7 +387,11 @@ if __name__ == '__main__':
         export()
     elif cmd == 'import':
         import_from_excel()
+    elif cmd == 'add-submission':
+        add_submission()
     elif cmd == 'stats':
         stats()
     else:
-        print('未知命令，使用: export, import, stats')
+        print(f'未知命令: {cmd}')
+        print('可用命令: export, import, add-submission, stats')
+        sys.exit(1)
