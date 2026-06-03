@@ -56,3 +56,5 @@ next-env.d.ts
 
 # backlink submission logs
 logs/
+
+/2-gitignore/
