@@ -17,11 +17,17 @@
 
 ### 三个项目标准信息
 
-| 项目 | 名称 | 域名 | 一句话描述 |
-|------|------|------|-----------|
-| extractkeywords | extractkeywords | extractkeywords.com | Free online keyword extraction tool |
-| tryschedule | tryschedule | tryschedule.com | Free online schedule builder and planner |
-| heicpdf | heicpdf | heicpdf.to | Free online HEIC to PDF converter |
+| 项目 | 数据库名称 | 域名 | 一句话描述 |
+|------|-----------|------|-----------|
+| extractkeywords | **extractkeywords.com** | extractkeywords.com | Free online keyword extraction tool |
+| tryschedule | **tryschedule.com** | tryschedule.com | Free online schedule builder and planner |
+| heicpdf | **heicpdf.to** | heicpdf.to | Free online HEIC to PDF converter |
+
+**⚠️ 项目命名规范：**
+- 数据库记录必须使用**带域名后缀的完整版本**
+- `tryschedule.com` ✅ 而非 `tryschedule` ❌
+- `extractkeywords.com` ✅ 而非 `extractkeywords` ❌
+- `heicpdf.to` ✅ 而非 `heicpdf` ❌（注意是 **.to** 不是 .com）
 
 **标签**：工具类、免费、在线工具
 
