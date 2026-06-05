@@ -5,11 +5,13 @@ import sqlite3
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
 from datetime import datetime
+from pathlib import Path
 import sys
 import os
 
 DB_PATH = 'backlinks.db'
 EXCEL_PATH = 'backlinks.xlsx'
+LOG_FILE = Path(__file__).parent / "logs" / "submission.log"
 
 # 允许的提交状态（数据库有 CHECK 约束，此列表保持一致）
 VALID_STATUSES = ['已提交', '失败', '需付费', '需登录']
@@ -32,6 +34,31 @@ def validate_status(status):
         print(f'   允许的状态: {", ".join(VALID_STATUSES)}')
         return False
     return True
+
+
+def log_to_file(site_url: str, project: str, submit_url: str, name: str, email: str,
+                comment: str, result: str, comment_id: str = None):
+    """追加一条提交记录到日志文件"""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    entry = f"""=== {timestamp} ===
+站点：{site_url}
+项目：{project}
+姓名：{name}
+邮箱：{email}
+网址：{submit_url}
+评论：{comment}
+结果：{result}"""
+    
+    if comment_id:
+        entry += f"，评论ID: {comment_id}"
+    
+    entry += "\n\n"
+    
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(entry)
 
 
 def export():
@@ -250,25 +277,53 @@ def import_from_excel():
 
 
 def add_submission():
-    """添加/更新提交记录"""
-    if len(sys.argv) < 4:
-        print('用法: python3 bl.py add-submission <site_id> <project> <status> [--notes "备注"]')
+    """添加/更新提交记录（数据库 + 日志）"""
+    if len(sys.argv) < 5:
+        print('用法: python3 bl.py add-submission <site_id> <project> <status> [选项]')
         print(f'状态可选: {", ".join(VALID_STATUSES)}')
+        print()
+        print('选项:')
+        print('  --notes "备注"          添加备注')
+        print('  --comment "评论内容"    记录日志（博客评论必填）')
+        print('  --comment-id "ID"       评论ID（成功时填写）')
+        print('  --url "网址"            提交的网址（博客评论必填）')
+        print('  --name "姓名"           填写的姓名（默认: Stefan M.）')
+        print('  --email "邮箱"          填写的邮箱（默认: pang3fan@gmail.com）')
         sys.exit(1)
     
     site_id = sys.argv[2]
     project = sys.argv[3]
     status = sys.argv[4]
     
-    # 提取备注（如果有）
+    # 提取可选参数
     notes = ''
-    if '--notes' in sys.argv:
-        idx = sys.argv.index('--notes')
-        if idx + 1 < len(sys.argv):
-            notes = sys.argv[idx + 1]
+    comment = ''
+    comment_id = ''
+    submit_url = ''
+    name = 'Stefan M.'
+    email = 'pang3fan@gmail.com'
+    
+    for i in range(5, len(sys.argv)):
+        if sys.argv[i] == '--notes' and i + 1 < len(sys.argv):
+            notes = sys.argv[i + 1]
+        elif sys.argv[i] == '--comment' and i + 1 < len(sys.argv):
+            comment = sys.argv[i + 1]
+        elif sys.argv[i] == '--comment-id' and i + 1 < len(sys.argv):
+            comment_id = sys.argv[i + 1]
+        elif sys.argv[i] == '--url' and i + 1 < len(sys.argv):
+            submit_url = sys.argv[i + 1]
+        elif sys.argv[i] == '--name' and i + 1 < len(sys.argv):
+            name = sys.argv[i + 1]
+        elif sys.argv[i] == '--email' and i + 1 < len(sys.argv):
+            email = sys.argv[i + 1]
     
     # 校验状态
     if not validate_status(status):
+        sys.exit(1)
+    
+    # 校验博客评论必填参数
+    if comment and not submit_url:
+        print('❌ 博客评论提交必须提供 --url 参数')
         sys.exit(1)
     
     conn = sqlite3.connect(DB_PATH)
@@ -284,17 +339,32 @@ def add_submission():
         ''', (site_id, project, status, notes, now_ts, status, notes, now_ts))
         conn.commit()
         
-        # 查询站点名用于展示
-        cursor.execute('SELECT site_name, site_url FROM sites WHERE id = ?', (site_id,))
+        # 查询站点信息用于展示和日志
+        cursor.execute('SELECT site_url FROM sites WHERE id = ?', (site_id,))
         site = cursor.fetchone()
-        site_label = site[0] or site[1] if site else f'id={site_id}'
+        site_url = site[0] if site else ''
         
-        print(f'✅ 提交记录已保存')
-        print(f'   站点: {site_label}')
+        print(f'✅ 数据库记录已保存')
+        print(f'   站点: {site_url}')
         print(f'   项目: {project}')
         print(f'   状态: {status}')
         if notes:
             print(f'   备注: {notes}')
+        
+        # 如果有评论内容，写入日志
+        if comment:
+            log_to_file(
+                site_url=site_url,
+                project=project,
+                submit_url=submit_url,
+                name=name,
+                email=email,
+                comment=comment,
+                result='成功' if status == '已提交' else status,
+                comment_id=comment_id
+            )
+            print(f'✅ 日志已记录到 {LOG_FILE}')
+        
     except sqlite3.IntegrityError as e:
         print(f'❌ 数据库错误: {e}')
         conn.rollback()
@@ -361,8 +431,9 @@ if __name__ == '__main__':
         print('用法:')
         print('  python3 bl.py export                    → 数据库 → Excel（安全合并）')
         print('  python3 bl.py import                    → Excel → 数据库（安全模式）')
-        print('  python3 bl.py add-submission <id> <project> <status> [--notes "备注"]  → 添加/更新提交记录')
-        print(f'    状态可选: {", ".join(VALID_STATUSES)}')
+        print('  python3 bl.py add-submission <id> <project> <status> [选项]')
+        print('    → 添加/更新提交记录（数据库 + 日志）')
+        print()
         print('  python3 bl.py stats                     → 查看统计')
         sys.exit(0)
     
