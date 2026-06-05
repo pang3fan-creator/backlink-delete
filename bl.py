@@ -51,7 +51,7 @@ def export():
     projects = [r[0] for r in cursor.fetchall()]
 
     # 获取所有站点
-    cursor.execute('''SELECT id, site_name, site_url, site_type, category, weight, language
+    cursor.execute('''SELECT id, site_name, site_url, site_type, category, weight
         FROM sites ORDER BY 
         CASE WHEN category IS NULL THEN 1 ELSE 0 END,
         category, weight DESC NULLS LAST''')
@@ -66,14 +66,14 @@ def export():
 
     # 读取现有 Excel 数据（如果存在）
     excel_subs = {}  # (site_url, project) -> status
-    excel_site_info = {}  # site_url -> {name, type, category, weight, language}
+    excel_site_info = {}  # site_url -> {name, type, category, weight}
     
     if os.path.exists(EXCEL_PATH):
         try:
             wb_old = openpyxl.load_workbook(EXCEL_PATH)
             ws_old = wb_old.active
             old_headers = [cell.value for cell in ws_old[1]]
-            old_projects = [h for h in old_headers[6:] if h]
+            old_projects = [h for h in old_headers[5:] if h]
             
             for row in ws_old.iter_rows(min_row=2, values_only=True):
                 site_url = str(row[1]).strip().lower() if row[1] else ''
@@ -85,13 +85,12 @@ def export():
                     'name': row[0],
                     'type': row[2],
                     'category': row[3],
-                    'weight': row[4],
-                    'language': row[5]
+                    'weight': row[4]
                 }
                 
                 # 保存提交状态
                 for proj_idx, proj in enumerate(old_projects):
-                    col = 6 + proj_idx
+                    col = 5 + proj_idx
                     if col < len(row) and row[col]:
                         excel_subs[(site_url, proj)] = str(row[col]).strip()
             
@@ -113,7 +112,7 @@ def export():
     # 建立反向映射
     site_id_to_url = {site[0]: site[2].lower() for site in sites}
 
-    headers = ['站点名称', '提交地址', '类型', '分类', '权重', '语言'] + list(projects)
+    headers = ['站点名称', '提交地址', '类型', '分类', '权重'] + list(projects)
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color='FFFFFF')
@@ -124,7 +123,7 @@ def export():
     preserved_count = 0
 
     for row_idx, site in enumerate(sites, 2):
-        sid, name, url, stype, cat, weight, lang = site
+        sid, name, url, stype, cat, weight = site
         site_url = url.lower()
         
         ws.cell(row=row_idx, column=1, value=name or '')
@@ -132,10 +131,9 @@ def export():
         ws.cell(row=row_idx, column=3, value=stype or '')
         ws.cell(row=row_idx, column=4, value=cat or '')
         ws.cell(row=row_idx, column=5, value=str(weight or ''))
-        ws.cell(row=row_idx, column=6, value=lang or '')
         
         for proj_idx, proj in enumerate(projects):
-            col = 7 + proj_idx
+            col = 6 + proj_idx
             
             # 优先使用 Excel 中的值（主人手动填的优先）
             excel_status = excel_subs.get((site_url, proj), '')
