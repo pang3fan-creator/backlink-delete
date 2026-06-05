@@ -39,11 +39,10 @@
 
 ### 可用工具箱
 
-| 工具 | 用途 | 类型 |
-|------|------|------|
-| `bl.py` | 数据库记录、导出、统计 | 脚本 |
-| `log_submission.py` | 日志文件记录 | 脚本 |
-| `wp_comment.py` | 生成 WordPress 评论提交 JS 代码 | 脚本 |
+|| 工具 | 用途 | 类型 |
+||------|------|------|
+|| `bl.py` | 数据库记录 + 日志记录（合二为一） | 脚本 |
+|| `wp_comment.py` | 生成 WordPress 评论提交 JS 代码 | 脚本 |
 
 ### 类型 A：博客评论（WordPress）✅ 已验证
 
@@ -51,14 +50,13 @@
 
 #### 标准工作流
 
-| 步骤 | 操作 | 方式 |
-|------|------|------|
-| 1️⃣ | 用 web_extract 读文章内容 | 素贞手动 |
-| 2️⃣ | 根据文章生成评论 + 锚文本 | 素贞手动 |
-| 3️⃣ | 用 browser_navigate 打开文章，在 Console 跑通用 JS | 素贞手动（可封装模板） |
-| 4️⃣ | 确认 URL 跳转到 `#comment-XXX` | 素贞检查 |
-| 5️⃣ | 数据库记录：`python3 bl.py add-submission ...` | 脚本 |
-| 6️⃣ | 日志记录：`python3 log_submission.py --site ... --project ... --url ... --comment ... --result ...` | 脚本 |
+|| 步骤 | 操作 | 方式 |
+||------|------|------|
+|| 1️⃣ | 用 web_extract 读文章内容 | 素贞手动 |
+|| 2️⃣ | 根据文章生成评论 + 锚文本 | 素贞手动 |
+|| 3️⃣ | 用 browser_navigate 打开文章，在 Console 跑通用 JS | 素贞手动（可封装模板） |
+|| 4️⃣ | 确认 URL 跳转到 `#comment-XXX` | 素贞检查 |
+|| 5️⃣ | 数据库 + 日志记录：`python3 bl.py add-submission ...` | 脚本（一次调用两条记录） |
 
 #### 通用 JS 一键提交
 
@@ -124,22 +122,27 @@ document.getElementById('submit').click();
 
 **两条线记录，用途不同：**
 
-| 记录位置 | 用途 | 保留周期 |
-|----------|------|----------|
-| **数据库** | 避免重复提交，长期统计 | 永久 |
-| **日志文件** | 追溯提交过程，检查网址是否填写 | 主人定期检查后手动清理 |
+|| 记录位置 | 用途 | 保留周期 |
+||----------|------|----------|
+|| **数据库** | 避免重复提交，长期统计 | 永久 |
+|| **日志文件** | 追溯提交过程，检查网址是否填写 | 主人定期检查后手动清理 |
 
 **数据关联**：
 - 查站点状态 → 数据库
 - 查详细信息（近期） → 日志文件
 - 查详细信息（久远） → 日志已删除，以数据库为准
 
----
-
-#### 1. 数据库记录
+**一次调用，两条记录都完成：**
 
 ```bash
-python3 bl.py add-submission <site_id> <project> <status> [--notes "备注"]
+# 博客评论提交（数据库 + 日志）
+python3 bl.py add-submission <site_id> <project> 已提交 \
+  --url "https://extractkeywords.com" \
+  --comment "评论内容" \
+  --comment-id "12345"
+
+# 目录站点提交（只写数据库）
+python3 bl.py add-submission <site_id> <project> 已提交 --notes "备注"
 ```
 
 **状态定义**（禁止自定义，数据库有 CHECK 约束）：
@@ -148,25 +151,7 @@ python3 bl.py add-submission <site_id> <project> <status> [--notes "备注"]
 - `需付费` — 需要付费才能提交，需主人确认
 - `需登录` — 需要注册账号，需主人提供账号后提交
 
----
-
-#### 2. 日志文件记录
-
-**位置**：`logs/submission.log`
-**工具**：`log_submission.py`
-
-**每次提交调用**：
-```bash
-python3 log_submission.py \
-  --site "https://example.com/article" \
-  --project "tryschedule" \
-  --url "https://tryschedule.com" \
-  --name "Stefan M." \
-  --email "pang3fan@gmail.com" \
-  --comment "评论内容..." \
-  --result "成功" \
-  --comment-id "12345"
-```
+**日志位置**：`logs/submission.log`
 
 **日志用途**：
 - 主人定期检查，确认网址是否正确填写
@@ -237,11 +222,14 @@ python3 bl.py export
 # 从 Excel 导入更新
 python3 bl.py import
 
-# 添加数据库提交记录
-python3 bl.py add-submission <site_id> <project> <status> [--notes "备注"]
+# 博客评论提交（数据库 + 日志）
+python3 bl.py add-submission <site_id> <project> 已提交 \
+  --url "https://extractkeywords.com" \
+  --comment "评论内容" \
+  --comment-id "12345"
 
-# 添加日志提交记录
-python3 log_submission.py --site <站点URL> --project <项目名> --url <提交网址> --comment <评论内容> --result <结果>
+# 目录站点提交（只写数据库）
+python3 bl.py add-submission <site_id> <project> 已提交 --notes "备注"
 ```
 
 ---
@@ -257,5 +245,5 @@ python3 log_submission.py --site <站点URL> --project <项目名> --url <提交
 
 ---
 
-**文档版本**: v2.1
-**最后更新**: 2026-06-03
+**文档版本**: v2.2
+**最后更新**: 2026-06-05
