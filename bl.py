@@ -51,10 +51,8 @@ def export():
     projects = [r[0] for r in cursor.fetchall()]
 
     # 获取所有站点
-    cursor.execute('''SELECT id, site_name, site_url, site_type, category, weight
-        FROM sites ORDER BY 
-        CASE WHEN category IS NULL THEN 1 ELSE 0 END,
-        category, weight DESC NULLS LAST''')
+    cursor.execute('''SELECT id, site_name, site_url, site_type, weight
+        FROM sites ORDER BY weight DESC NULLS LAST''')
     sites = cursor.fetchall()
 
     # 获取所有提交记录
@@ -66,14 +64,14 @@ def export():
 
     # 读取现有 Excel 数据（如果存在）
     excel_subs = {}  # (site_url, project) -> status
-    excel_site_info = {}  # site_url -> {name, type, category, weight}
+    excel_site_info = {}  # site_url -> {name, type, weight}
     
     if os.path.exists(EXCEL_PATH):
         try:
             wb_old = openpyxl.load_workbook(EXCEL_PATH)
             ws_old = wb_old.active
             old_headers = [cell.value for cell in ws_old[1]]
-            old_projects = [h for h in old_headers[5:] if h]
+            old_projects = [h for h in old_headers[4:] if h]
             
             for row in ws_old.iter_rows(min_row=2, values_only=True):
                 site_url = str(row[1]).strip().lower() if row[1] else ''
@@ -84,13 +82,12 @@ def export():
                 excel_site_info[site_url] = {
                     'name': row[0],
                     'type': row[2],
-                    'category': row[3],
-                    'weight': row[4]
+                    'weight': row[3]
                 }
                 
                 # 保存提交状态
                 for proj_idx, proj in enumerate(old_projects):
-                    col = 5 + proj_idx
+                    col = 4 + proj_idx
                     if col < len(row) and row[col]:
                         excel_subs[(site_url, proj)] = str(row[col]).strip()
             
@@ -112,7 +109,7 @@ def export():
     # 建立反向映射
     site_id_to_url = {site[0]: site[2].lower() for site in sites}
 
-    headers = ['站点名称', '提交地址', '类型', '分类', '权重'] + list(projects)
+    headers = ['站点名称', '提交地址', '类型', '权重'] + list(projects)
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color='FFFFFF')
@@ -123,17 +120,16 @@ def export():
     preserved_count = 0
 
     for row_idx, site in enumerate(sites, 2):
-        sid, name, url, stype, cat, weight = site
+        sid, name, url, stype, weight = site
         site_url = url.lower()
         
         ws.cell(row=row_idx, column=1, value=name or '')
         ws.cell(row=row_idx, column=2, value=url or '')
         ws.cell(row=row_idx, column=3, value=stype or '')
-        ws.cell(row=row_idx, column=4, value=cat or '')
-        ws.cell(row=row_idx, column=5, value=str(weight or ''))
+        ws.cell(row=row_idx, column=4, value=str(weight or ''))
         
         for proj_idx, proj in enumerate(projects):
-            col = 6 + proj_idx
+            col = 5 + proj_idx
             
             # 优先使用 Excel 中的值（主人手动填的优先）
             excel_status = excel_subs.get((site_url, proj), '')
@@ -160,9 +156,8 @@ def export():
     ws.column_dimensions['A'].width = 30
     ws.column_dimensions['B'].width = 50
     ws.column_dimensions['C'].width = 15
-    ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 8
-    ws.column_dimensions['F'].width = 10
+    ws.column_dimensions['D'].width = 8
+    ws.column_dimensions['E'].width = 10
 
     wb.save(EXCEL_PATH)
     print(f'✅ 导出成功: {EXCEL_PATH}')
@@ -192,7 +187,7 @@ def import_from_excel():
 
     # 第一行是表头
     headers = [cell.value for cell in ws[1]]
-    projects = [h for h in headers[6:] if h]  # 第7列开始是项目
+    projects = [h for h in headers[5:] if h]  # 第6列开始是项目
 
     # 从第2行开始
     updated = 0
@@ -217,22 +212,18 @@ def import_from_excel():
         if row[2]:
             cursor.execute('UPDATE sites SET site_type = ? WHERE site_url = ?', (row[2], site_url))
         if row[3]:
-            cursor.execute('UPDATE sites SET category = ? WHERE site_url = ?', (row[3], site_url))
-        if row[4]:
             try:
-                weight = int(row[4]) if row[4] else None
+                weight = int(row[3]) if row[3] else None
                 cursor.execute('UPDATE sites SET weight = ? WHERE site_url = ?', (weight, site_url))
             except:
                 pass
-        if row[5]:
-            cursor.execute('UPDATE sites SET language = ? WHERE site_url = ?', (row[5], site_url))
         
         cursor.execute('SELECT id FROM sites WHERE site_url = ?', (site_url,))
         site_id = cursor.fetchone()[0]
         
         # 处理每个项目的提交状态
         for proj_idx, proj in enumerate(projects):
-            col = 6 + proj_idx
+            col = 5 + proj_idx
             status = str(row[col]).strip() if col < len(row) and row[col] else ''
             
             if status:
@@ -330,12 +321,13 @@ def stats():
     subs_count = cursor.fetchone()[0]
     
     cursor.execute('''
-        SELECT category, COUNT(*) 
+        SELECT site_type, COUNT(*) 
         FROM sites 
-        WHERE category IS NOT NULL 
-        GROUP BY category
+        WHERE site_type IS NOT NULL AND site_type != ''
+        GROUP BY site_type
+        ORDER BY COUNT(*) DESC
     ''')
-    categories = cursor.fetchall()
+    types = cursor.fetchall()
     
     cursor.execute('''
         SELECT project_name, COUNT(*) 
@@ -361,9 +353,9 @@ def stats():
     for status, count in statuses:
         print(f'   {status}: {count}')
     print()
-    print('站点分类:')
-    for cat, count in categories:
-        print(f'   {cat}: {count}')
+    print('站点类型:')
+    for stype, count in types:
+        print(f'   {stype}: {count}')
     print()
     print('项目提交:')
     for proj, count in projects:
