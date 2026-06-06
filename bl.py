@@ -211,7 +211,7 @@ def import_from_excel():
 
     # 第一行是表头
     headers = [cell.value for cell in ws[1]]
-    projects = [h for h in headers[4:] if h]  # 第5列开始是项目
+    projects = [h for h in headers[3:] if h]  # 第4列开始是项目
 
     # 从第2行开始
     updated = 0
