@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""backlinks管理工具：数据库 ↔ Excel 双向同步（安全合并模式）"""
+"""
+backlink_db.py - 外链数据库管理工具
+
+功能：
+- export: 数据库 → Excel（安全合并）
+- import: Excel → 数据库（安全模式）
+- add-submission: 手动添加提交记录（补救用，正常流程用 backlink_submit.py）
+- stats: 查看统计
+
+用法：
+python3 backlink_db.py export
+python3 backlink_db.py import
+python3 backlink_db.py stats
+python3 backlink_db.py add-submission <site_id> <project> <status> [选项]
+"""
 
 import sqlite3
 import openpyxl
