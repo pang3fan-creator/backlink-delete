@@ -42,7 +42,7 @@ page.goto("文章URL", timeout=30000)
 # 填写表单（Website 字段必须填！）
 page.query_selector('#author').fill('Stefan M.')
 page.query_selector('#email').fill('pang3fan@gmail.com')
-page.query_selector('#url').fill('https://extractkeywords.com')  # 链接！
+page.query_selector('#url').fill('<项目域名>')  # 链接！三选一
 page.query_selector('#comment').fill('评论内容')
 
 page.query_selector('#submit').click()
@@ -52,18 +52,33 @@ page.wait_for_timeout(2000)
 browser.close()
 ```
 
+**项目域名**：
+- `https://extractkeywords.com`
+- `https://tryschedule.com`
+- `https://heicpdf.to`
+
 ---
 
 ## 四、记录命令
 
-```bash
-# 提交后记录
-python3 bl.py add-submission <site_id> extractkeywords.com 已提交 \
-  --url "https://extractkeywords.com" \
-  --comment "评论内容" \
-  --comment-id "12345"
+**提交后执行此命令，自动写入数据库 + 日志：**
 
-# 查看统计
+```bash
+python3 bl.py add-submission <site_id> <项目域名> 已提交 \
+  --url "<项目域名>" \
+  --comment "评论内容" \
+  --comment-id "评论ID"
+```
+
+**参数说明**：
+- `<site_id>`: 站点 ID（从数据库获取）
+- `<项目域名>`: extractkeywords.com / tryschedule.com / heicpdf.to
+- `--url`: 提交的网址（必填，博客评论）
+- `--comment`: 评论内容（必填，博客评论，用于日志记录）
+- `--comment-id`: 评论 ID（成功时填写，从 URL 的 #comment-XXX 获取）
+
+**查看统计**：
+```bash
 python3 bl.py stats
 ```
 
@@ -93,5 +108,5 @@ python3 bl.py stats
 
 ---
 
-**文档版本**: v3.0
+**文档版本**: v3.1
 **最后更新**: 2026-06-12
