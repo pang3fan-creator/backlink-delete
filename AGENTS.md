@@ -38,20 +38,16 @@ browser = launch(headless=True, proxy="http://127.0.0.1:7890")
 
 ### 第一步：自动提交（首选）
 
-```bash
-python3 backlink_submit.py --project <项目> --site-id <ID> --url "文章URL" --comment "评论内容"
-```
-
 自动执行：
 1. CloakBrowser 打开文章页面
 2. 尝试多种选择器组合找评论表单
 3. 填表 → 提交
 4. 检测结果（URL #comment- / 页面成功提示）
-5. 自动写入数据库 + 日志
+5. **自动写入数据库 + 日志** ✅
 
 ### 第二步：手动兜底（自动失败时）
 
-自动提交失败后，用 CloakBrowser 亲自查看和处理：
+用 CloakBrowser 亲自查看和处理，提交成功后手动记录：
 
 **超时** → CloakBrowser 再试一次
 - 能打开 → 找表单 → 填表提交 → 记录 ✅
@@ -68,10 +64,7 @@ python3 backlink_submit.py --project <项目> --site-id <ID> --url "文章URL" -
 
 **Cloudflare / 需登录** → 跳过
 
-### 第三步：记录
-
-手动提交成功后，用 `backlink_db.py add-submission` 记录：
-
+手动记录命令：
 ```bash
 python3 backlink_db.py add-submission <site_id> <项目域名> 已提交 \
   --url "<项目域名>" \
