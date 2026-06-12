@@ -22,34 +22,66 @@
 
 ---
 
-## 三、脚本说明
+## 三、浏览器要求
 
-### 脚本职责
+**全程必须使用 CloakBrowser！** 无论自动还是手动，无论成功还是失败，一律 CloakBrowser。
+禁止使用 Hermes 内置浏览器（browser_navigate）。
 
-| 脚本 | 职责 | 说明 |
-|------|------|------|
-| `backlink_submit.py` | 提交评论 + 自动记录 | 主流程，提交后自动写入数据库和日志 |
-| `backlink_db.py` | 数据库管理 | Excel 同步、统计、手动补救 |
+```python
+from cloakbrowser import launch
+browser = launch(headless=True, proxy="http://127.0.0.1:7890")
+```
 
-### backlink_submit.py（主流程）
+---
+
+## 四、提交流程
+
+### 第一步：自动提交（首选）
 
 ```bash
 python3 backlink_submit.py --project <项目> --site-id <ID> --url "文章URL" --comment "评论内容"
 ```
 
-**参数**：
-- `--project`: extractkeywords / tryschedule / heicpdf
-- `--site-id`: 站点 ID（从数据库获取）
-- `--url`: 文章 URL
-- `--comment`: 评论内容
+自动执行：
+1. CloakBrowser 打开文章页面
+2. 尝试多种选择器组合找评论表单
+3. 填表 → 提交
+4. 检测结果（URL #comment- / 页面成功提示）
+5. 自动写入数据库 + 日志
 
-**自动执行**：
-1. CloakBrowser 打开页面
-2. 填写表单、提交评论
-3. 检查结果（成功/失败）
-4. 自动写入数据库 + 日志
+### 第二步：手动兜底（自动失败时）
 
-### backlink_db.py（数据库管理）
+自动提交失败后，用 CloakBrowser 亲自查看和处理：
+
+**超时** → CloakBrowser 再试一次
+- 能打开 → 找表单 → 填表提交 → 记录 ✅
+- 打不开 → 标记失败，跳过
+
+**找不到评论表单** → CloakBrowser 查看
+- 有表单（选择器不同）→ 用 page.evaluate 动态找 → 提交 → 记录 ✅
+- Jetpack/iframe → 跳过
+- 评论区已关闭 → 标记失败，跳过
+
+**提交成功但未确认** → CloakBrowser 看页面
+- 有成功提示 → 标记已提交 ✅
+- 确实没成功 → 标记失败
+
+**Cloudflare / 需登录** → 跳过
+
+### 第三步：记录
+
+手动提交成功后，用 `backlink_db.py add-submission` 记录：
+
+```bash
+python3 backlink_db.py add-submission <site_id> <项目域名> 已提交 \
+  --url "<项目域名>" \
+  --comment "评论内容" \
+  --comment-id "评论ID"
+```
+
+---
+
+## 五、数据库管理（backlink_db.py）
 
 ```bash
 # 查看统计
@@ -61,13 +93,13 @@ python3 backlink_db.py export
 # Excel → 数据库
 python3 backlink_db.py import
 
-# 手动补救（正常流程不需要）
+# 手动补救
 python3 backlink_db.py add-submission <site_id> <project> <status> [选项]
 ```
 
 ---
 
-## 四、障碍处理
+## 六、障碍处理
 
 | 障碍 | 处理 |
 |------|------|
@@ -78,12 +110,12 @@ python3 backlink_db.py add-submission <site_id> <project> <status> [选项]
 
 ---
 
-## 五、注意事项
+## 七、注意事项
 
 1. **禁止主动导出 Excel** — 只有主人说"导出"时才执行
 2. **一站点三项目** — 错开时间提交，不要同时提交三个
 
 ---
 
-**文档版本**: v4.0
+**文档版本**: v4.1
 **最后更新**: 2026-06-12
