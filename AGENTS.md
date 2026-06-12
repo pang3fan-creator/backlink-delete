@@ -34,7 +34,9 @@ browser = launch(headless=True, proxy="http://127.0.0.1:7890")
 
 ---
 
-## 四、提交流程
+## 四、提交流程（仅限 blog_comment 类型）
+
+当前流程仅针对博客评论提交。其他类型站点（form、directory、profile、article、github、listing）暂未涉及，后续设计。
 
 ### 第一步：自动提交（首选）
 
