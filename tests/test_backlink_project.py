@@ -20,6 +20,64 @@ class BacklinkProjectTests(unittest.TestCase):
         self.assertIn("已失效", backlink_common.VALID_STATUSES)
         self.assertIn("跳过", backlink_common.VALID_STATUSES)
 
+    def test_agent_browser_tools_exported(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_common
+
+        self.assertTrue(callable(backlink_common.agent_browser_available))
+        self.assertTrue(callable(backlink_common.get_agent_browser_proxy))
+        self.assertTrue(callable(backlink_common.run_agent_browser))
+        self.assertTrue(callable(backlink_common.close_agent_browser))
+
+    def test_agent_browser_available_returns_bool(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_common
+        result = backlink_common.agent_browser_available()
+        self.assertIsInstance(result, bool)
+
+    def test_get_agent_browser_proxy_respects_env(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_common
+
+        with tempfile.TemporaryDirectory() as _:
+            env_backup = os.environ.get("AGENT_BROWSER_PROXY")
+            os.environ.pop("AGENT_BROWSER_PROXY", None)
+            os.environ.pop("HTTP_PROXY", None)
+            os.environ.pop("HTTPS_PROXY", None)
+
+            try:
+                self.assertIsNone(backlink_common.get_agent_browser_proxy())
+                os.environ["AGENT_BROWSER_PROXY"] = "http://127.0.0.1:8118"
+                self.assertEqual(backlink_common.get_agent_browser_proxy(), "http://127.0.0.1:8118")
+            finally:
+                os.environ.pop("AGENT_BROWSER_PROXY", None)
+                if env_backup:
+                    os.environ["AGENT_BROWSER_PROXY"] = env_backup
+                else:
+                    os.environ.pop("AGENT_BROWSER_PROXY", None)
+
+    def test_submit_comment_no_agent_browser_returns_failure(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_common
+        import backlink_submit
+        import shutil as shutil_mod
+
+        saved_which = shutil_mod.which
+        try:
+            shutil_mod.which = lambda x: None
+            backlink_common._AGENT_BROWSER_PATH = None
+            result = backlink_submit.submit_comment(
+                "extractkeywords", "99999",
+                "https://example.com/blog/post",
+                "Test comment"
+            )
+            self.assertFalse(result["success"])
+            self.assertEqual(result["status"], "失败")
+            self.assertIn("未安装", result["error"])
+        finally:
+            shutil_mod.which = saved_which
+            backlink_common._AGENT_BROWSER_PATH = None
+
     def test_optional_openpyxl_keeps_stats_command_available(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "backlinks.db"
@@ -42,6 +100,10 @@ class BacklinkProjectTests(unittest.TestCase):
                     status TEXT DEFAULT '已提交',
                     notes TEXT,
                     updated_at TEXT,
+                    target_url TEXT,
+                    comment_text TEXT,
+                    comment_id TEXT,
+                    result_reason TEXT,
                     UNIQUE(site_id, project_name)
                 );
                 INSERT INTO sites (site_url, site_type, weight, created_at) VALUES

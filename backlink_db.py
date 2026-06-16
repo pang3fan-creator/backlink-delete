@@ -302,7 +302,7 @@ def import_from_excel():
 def add_submission():
     """添加/更新提交记录（数据库 + 日志）"""
     if len(sys.argv) < 5:
-        print('用法: python3 bl.py add-submission <site_id> <project> <status> [选项]')
+        print('用法: python3 backlink_db.py add-submission <site_id> <project> <status> [选项]')
         print(f'状态可选: {", ".join(VALID_STATUSES)}')
         print()
         print('选项:')
@@ -475,12 +475,12 @@ def stats():
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('用法:')
-        print('  python3 bl.py export                    → 数据库 → Excel（安全合并）')
-        print('  python3 bl.py import                    → Excel → 数据库（安全模式）')
-        print('  python3 bl.py add-submission <id> <project> <status> [选项]')
+        print('  python3 backlink_db.py export                    → 数据库 → Excel（安全合并）')
+        print('  python3 backlink_db.py import                    → Excel → 数据库（安全模式）')
+        print('  python3 backlink_db.py add-submission <id> <project> <status> [选项]')
         print('    → 添加/更新提交记录（数据库 + 日志）')
         print()
-        print('  python3 bl.py stats                     → 查看统计')
+        print('  python3 backlink_db.py stats                     → 查看统计')
         sys.exit(0)
     
     cmd = sys.argv[1]

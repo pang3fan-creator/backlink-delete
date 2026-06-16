@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Shared constants and SQLite migration helpers for backlink tools."""
+"""Shared constants, SQLite migration helpers, and agent-browser integration for backlink tools."""
 
 import os
+import shutil
+import subprocess
 import sqlite3
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 
 ROOT = Path(__file__).parent
@@ -24,6 +26,50 @@ VALID_STATUSES = (
 )
 
 STATUS_SQL = ", ".join(f"'{status}'" for status in VALID_STATUSES)
+
+# Agent-browser integration
+
+_AGENT_BROWSER_PATH: Optional[str] = None
+
+
+def agent_browser_available() -> bool:
+    """Check if agent-browser CLI is installed and executable."""
+    global _AGENT_BROWSER_PATH
+    found = shutil.which("agent-browser")
+    if found:
+        _AGENT_BROWSER_PATH = found
+        return True
+    _AGENT_BROWSER_PATH = None
+    return False
+
+
+def get_agent_browser_proxy() -> Optional[str]:
+    """Return proxy URL from env, or local default if available."""
+    return os.environ.get("AGENT_BROWSER_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+
+
+def run_agent_browser(args: list[str], timeout: int = 30) -> tuple[int, str, str]:
+    """Run an agent-browser command. Returns (returncode, stdout, stderr)."""
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, timeout=timeout
+        )
+        return result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "", "timeout"
+    except FileNotFoundError:
+        return -2, "", "agent-browser not found"
+
+
+def close_agent_browser(all_sessions: bool = False) -> None:
+    """Close agent-browser session(s). Never raises."""
+    cmd = ["agent-browser", "close"]
+    if all_sessions:
+        cmd.append("--all")
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=10)
+    except Exception:
+        pass
 
 
 def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:

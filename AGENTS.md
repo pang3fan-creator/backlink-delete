@@ -71,7 +71,7 @@
    ```
 
 2. **评估 worth_submitting（如果为 NULL）**
-   - 用 CloakBrowser 打开页面
+   - 用 agent-browser 打开页面
    - 有评论表单且有 URL 字段 → worth=1
    - 无评论 / Jetpack iframe / 评论区关闭 / 无 Website 字段 → worth=0，并写 `skip_reason`
    ```bash
@@ -93,7 +93,7 @@
    ```
 
 4. **手动兜底（脚本失败时）**
-   - 用 CloakBrowser 手动打开、填表、提交
+   - 用 agent-browser 手动打开、填表、提交
    - 记录结果：
    ```bash
    python3 backlink_db.py add-submission <site_id> extractkeywords.com 已提交 \
@@ -132,7 +132,7 @@ db.commit()
 
 ## 注意事项
 
-- **浏览器**：全程用 CloakBrowser，禁止 Hermes 内置浏览器
+- **浏览器**：全程用 agent-browser，禁止 Hermes 内置浏览器
 - **项目参数**：`--project` 用短名（extractkeywords / tryschedule / heicpdf）
 - **失败记录**：必须写 notes，说明具体原因
 - **提交证据**：博客评论要记录 `target_url/comment_text/comment_id/result_reason`
