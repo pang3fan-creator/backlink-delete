@@ -4,12 +4,7 @@
 
 **邮箱**：pang3fan@gmail.com
 
-**三个项目**：
-| 项目 | 域名 |
-|------|------|
-| extractkeywords | extractkeywords.com |
-| tryschedule | tryschedule.com |
-| heicpdf | heicpdf.to |
+**项目**：每次提交时由主人指定 `--project` 和 `--submit-url`，不预设固定项目列表。
 
 ---
 
@@ -61,7 +56,7 @@
    cur.execute('''
      SELECT s.id, s.site_url, s.worth_submitting
      FROM sites s
-     LEFT JOIN submissions sb ON s.id = sb.site_id AND sb.project_name = 'extractkeywords.com'
+     LEFT JOIN submissions sb ON s.id = sb.site_id AND sb.project_name = '<project_name>'
      WHERE s.site_type = 'blog_comment' AND sb.id IS NULL
      LIMIT 5
    ''')
@@ -86,7 +81,8 @@
 3. **提交评论（worth=1 的站点）**
    ```bash
    python3 backlink_submit.py \
-     --project extractkeywords \
+     --project "<project_name>" \
+     --submit-url "<你要提交的外链URL>" \
      --site-id <site_id> \
      --url "<文章URL>" \
      --comment "<评论内容>"
@@ -96,7 +92,7 @@
    - 用 agent-browser 手动打开、填表、提交
    - 记录结果：
    ```bash
-   python3 backlink_db.py add-submission <site_id> extractkeywords.com 已提交 \
+   python3 backlink_db.py add-submission <site_id> <project_name> 已提交 \
      --url "<文章URL>" \
      --comment "<评论内容>" \
      --comment-id "<评论ID>" \
@@ -133,7 +129,7 @@ db.commit()
 ## 注意事项
 
 - **浏览器**：全程用 agent-browser，禁止 Hermes 内置浏览器
-- **项目参数**：`--project` 用短名（extractkeywords / tryschedule / heicpdf）
+- **项目参数**：`--project` 和 `--submit-url` 由主人每次指定，不预设固定列表
 - **失败记录**：必须写 notes，说明具体原因
 - **提交证据**：博客评论要记录 `target_url/comment_text/comment_id/result_reason`
 - **一站点三项目**：错开时间提交，不要同时提交三个

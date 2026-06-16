@@ -4,12 +4,16 @@
 提交评论 + 自动记录到数据库和日志
 
 用法：
-python3 backlink_submit.py --project extractkeywords --site-id 123 --url "https://example.com/blog/post" --comment "评论内容"
+python3 backlink_submit.py \
+  --project "<项目名称>" \
+  --submit-url "<要提交的外链URL>" \
+  --site-id 123 \
+  --url "<文章URL>" \
+  --comment "<评论内容>"
 """
 
 import argparse
 import re
-import sys
 from datetime import datetime
 from typing import Optional
 
@@ -22,18 +26,6 @@ from backlink_common import (
     migrate_database,
     run_agent_browser,
 )
-
-PROJECT_URLS = {
-    "extractkeywords": "https://extractkeywords.com",
-    "tryschedule": "https://tryschedule.com",
-    "heicpdf": "https://heicpdf.to"
-}
-
-PROJECT_DB_NAMES = {
-    "extractkeywords": "extractkeywords.com",
-    "tryschedule": "tryschedule.com",
-    "heicpdf": "heicpdf.to"
-}
 
 DEFAULT_NAME = "Stefan M."
 DEFAULT_EMAIL = "pang3fan@gmail.com"
@@ -256,10 +248,17 @@ def _extract_comment_id() -> Optional[str]:
     return None
 
 
-def submit_comment(project: str, site_id: str, article_url: str, comment: str,
-                   name: str = DEFAULT_NAME, email: str = DEFAULT_EMAIL) -> dict:
+def submit_comment(project: str, submit_url: str, site_id: str, article_url: str,
+                   comment: str, name: str = DEFAULT_NAME, email: str = DEFAULT_EMAIL) -> dict:
     """
     使用 agent-browser 提交评论
+
+    参数:
+        project:     项目名称（直接用作 DB 的 project_name）
+        submit_url:  要提交的外链 URL
+        site_id:     站点 ID
+        article_url: 目标文章 URL
+        comment:     评论内容
 
     返回: {
         'success': bool,
@@ -277,7 +276,6 @@ def submit_comment(project: str, site_id: str, article_url: str, comment: str,
             'form_found': None, 'form_submitted': None
         }
 
-    submit_url = PROJECT_URLS.get(project, f"https://{project}.com")
     proxy = get_agent_browser_proxy()
 
     def _fail(status: str, error: str, form_found=None, form_submitted=None) -> dict:
@@ -342,11 +340,10 @@ def _ab_open(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
 
 def main():
     parser = argparse.ArgumentParser(description="外链提交脚本（agent-browser）")
-    parser.add_argument("--project", required=True, 
-                        choices=["extractkeywords", "tryschedule", "heicpdf"],
-                        help="项目名称")
+    parser.add_argument("--project", required=True, help="项目名称（用作 DB 记录的项目标识）")
+    parser.add_argument("--submit-url", required=True, help="要提交的外链 URL")
     parser.add_argument("--site-id", required=True, help="站点 ID")
-    parser.add_argument("--url", required=True, help="文章 URL")
+    parser.add_argument("--url", required=True, help="目标文章 URL")
     parser.add_argument("--comment", required=True, help="评论内容")
     parser.add_argument("--name", default=DEFAULT_NAME, help="姓名")
     parser.add_argument("--email", default=DEFAULT_EMAIL, help="邮箱")
@@ -354,18 +351,16 @@ def main():
     args = parser.parse_args()
     migrate_database(DB_PATH)
     
-    submit_url = PROJECT_URLS[args.project]
-    db_project = PROJECT_DB_NAMES[args.project]
-    
     print(f"🐍 开始提交")
     print(f"   站点ID: {args.site_id}")
-    print(f"   项目: {db_project}")
+    print(f"   项目: {args.project}")
     print(f"   文章: {args.url}")
-    print(f"   网址: {submit_url}")
+    print(f"   外链: {args.submit_url}")
     print()
     
     result = submit_comment(
         project=args.project,
+        submit_url=args.submit_url,
         site_id=args.site_id,
         article_url=args.url,
         comment=args.comment,
@@ -375,8 +370,8 @@ def main():
     
     log_to_file(
         site_url=args.url,
-        project=db_project,
-        submit_url=submit_url,
+        project=args.project,
+        submit_url=args.submit_url,
         name=args.name,
         email=args.email,
         comment=args.comment,
@@ -386,7 +381,7 @@ def main():
     
     save_to_db(
         site_id=args.site_id,
-        project=db_project,
+        project=args.project,
         status=result['status'],
         notes=result.get('error') or "",
         target_url=args.url,

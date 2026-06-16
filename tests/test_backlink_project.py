@@ -67,7 +67,9 @@ class BacklinkProjectTests(unittest.TestCase):
             shutil_mod.which = lambda x: None
             backlink_common._AGENT_BROWSER_PATH = None
             result = backlink_submit.submit_comment(
-                "extractkeywords", "99999",
+                "test-project",
+                "https://test-site.com",
+                "99999",
                 "https://example.com/blog/post",
                 "Test comment"
             )
