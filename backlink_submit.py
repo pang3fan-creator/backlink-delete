@@ -12,9 +12,10 @@ import sqlite3
 import re
 import sys
 from datetime import datetime
-from pathlib import Path
+from typing import Optional
 
-# 项目配置
+from backlink_common import DB_PATH, LOG_FILE, VALID_STATUSES, migrate_database
+
 PROJECT_URLS = {
     "extractkeywords": "https://extractkeywords.com",
     "tryschedule": "https://tryschedule.com",
@@ -31,13 +32,6 @@ PROJECT_DB_NAMES = {
 # 标准信息
 DEFAULT_NAME = "Stefan M."
 DEFAULT_EMAIL = "pang3fan@gmail.com"
-
-# 路径
-DB_PATH = Path(__file__).parent / "backlinks.db"
-LOG_FILE = Path(__file__).parent / "logs" / "submission.log"
-
-# 允许的状态
-VALID_STATUSES = ['已提交', '失败', '需付费', '需登录']
 
 # WordPress 评论表单选择器组合
 FORM_SELECTORS = [
@@ -63,7 +57,7 @@ SUCCESS_INDICATORS = [
 
 
 def log_to_file(site_url: str, project: str, submit_url: str, name: str, email: str,
-                comment: str, result: str, comment_id: str | None = None):
+                comment: str, result: str, comment_id: Optional[str] = None):
     """追加一条提交记录到日志文件"""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     
@@ -87,8 +81,18 @@ def log_to_file(site_url: str, project: str, submit_url: str, name: str, email: 
         f.write(entry)
 
 
-def save_to_db(site_id: str, project: str, status: str, notes: str = ""):
+def save_to_db(
+    site_id: str,
+    project: str,
+    status: str,
+    notes: str = "",
+    target_url: str = "",
+    comment_text: str = "",
+    comment_id: Optional[str] = None,
+    result_reason: str = "",
+):
     """保存提交记录到数据库"""
+    migrate_database(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('PRAGMA foreign_keys = ON')
@@ -96,16 +100,29 @@ def save_to_db(site_id: str, project: str, status: str, notes: str = ""):
     now_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     cursor.execute('''
-        INSERT INTO submissions (site_id, project_name, status, notes, updated_at) 
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(site_id, project_name) DO UPDATE SET status=?, notes=?, updated_at=?
-    ''', (site_id, project, status, notes, now_ts, status, notes, now_ts))
+        INSERT INTO submissions (
+            site_id, project_name, status, notes, updated_at,
+            target_url, comment_text, comment_id, result_reason
+        ) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_id, project_name) DO UPDATE SET
+            status=?,
+            notes=?,
+            updated_at=?,
+            target_url=?,
+            comment_text=?,
+            comment_id=?,
+            result_reason=?
+    ''', (
+        site_id, project, status, notes, now_ts, target_url, comment_text, comment_id, result_reason,
+        status, notes, now_ts, target_url, comment_text, comment_id, result_reason
+    ))
     
     conn.commit()
     conn.close()
 
 
-def try_fill_form(page, name: str, email: str, submit_url: str, comment: str) -> str | None:
+def try_fill_form(page, name: str, email: str, submit_url: str, comment: str) -> Optional[str]:
     """
     尝试用多种选择器组合填写评论表单。
     返回 'ok' 或错误描述。
@@ -166,7 +183,7 @@ def check_success(page) -> dict:
     return {'found': False, 'comment_id': None, 'reason': 'no_success_indicator'}
 
 
-def extract_comment_id(page, page_text: str) -> str | None:
+def extract_comment_id(page, page_text: str) -> Optional[str]:
     """尝试从页面内容或 URL 提取评论ID"""
     # 从 URL
     m = re.search(r'#comment[_-](\d+)', page.url)
@@ -200,7 +217,12 @@ def submit_comment(project: str, site_id: str, article_url: str, comment: str,
         'form_submitted': bool,  # 是否成功提交了表单
     }
     """
-    from cloakbrowser import launch
+    try:
+        from cloakbrowser import launch
+    except ModuleNotFoundError:
+        return {'success': False, 'status': '失败', 'comment_id': None,
+                'error': '缺少 cloakbrowser 依赖，无法自动提交。请安装依赖或按 SOP 手动兜底。',
+                'form_found': None, 'form_submitted': None}
     
     submit_url = PROJECT_URLS.get(project, f"https://{project}.com")
     
@@ -233,11 +255,11 @@ def submit_comment(project: str, site_id: str, article_url: str, comment: str,
         
         if result['found']:
             return {'success': True, 'status': '已提交', 'comment_id': result['comment_id'], 'error': None,
-                    'form_found': True, 'form_submitted': True}
+                    'form_found': True, 'form_submitted': True, 'result_reason': result['reason']}
         else:
-            return {'success': False, 'status': '失败', 'comment_id': None, 
+            return {'success': False, 'status': '待确认', 'comment_id': None, 
                     'error': f'提交成功但未检测到确认（{result["reason"]}）',
-                    'form_found': True, 'form_submitted': True}
+                    'form_found': True, 'form_submitted': True, 'result_reason': result['reason']}
             
     except Exception as e:
         return {'success': False, 'status': '失败', 'comment_id': None, 'error': str(e),
@@ -256,6 +278,7 @@ def main():
     parser.add_argument("--email", default=DEFAULT_EMAIL, help="邮箱")
     
     args = parser.parse_args()
+    migrate_database(DB_PATH)
     
     submit_url = PROJECT_URLS[args.project]
     db_project = PROJECT_DB_NAMES[args.project]
@@ -294,7 +317,11 @@ def main():
         site_id=args.site_id,
         project=db_project,
         status=result['status'],
-        notes=result.get('error') or ""
+        notes=result.get('error') or "",
+        target_url=args.url,
+        comment_text=args.comment,
+        comment_id=result.get('comment_id'),
+        result_reason=result.get('result_reason') or result.get('error') or ""
     )
     
     # 输出结果

@@ -16,25 +16,28 @@ python3 backlink_db.py add-submission <site_id> <project> <status> [选项]
 """
 
 import sqlite3
-import openpyxl
-from openpyxl.styles import PatternFill, Font, Alignment
 from datetime import datetime
-from pathlib import Path
 import sys
 import os
 
-DB_PATH = 'backlinks.db'
-EXCEL_PATH = 'backlinks.xlsx'
-LOG_FILE = Path(__file__).parent / "logs" / "submission.log"
+from backlink_common import DB_PATH, EXCEL_PATH, LOG_FILE, VALID_STATUSES, migrate_database
 
-# 允许的提交状态（数据库有 CHECK 约束，此列表保持一致）
-VALID_STATUSES = ['已提交', '失败', '需付费', '需登录']
 
-# 颜色
-GREEN = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
-YELLOW = PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid')
-RED = PatternFill(start_color='FCE4EC', end_color='FCE4EC', fill_type='solid')
-BLUE = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+def load_openpyxl():
+    try:
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ModuleNotFoundError:
+        print('❌ 缺少 openpyxl，Excel 导入/导出不可用。请运行: python3 -m pip install openpyxl')
+        sys.exit(1)
+
+    fills = {
+        "green": PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid'),
+        "yellow": PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid'),
+        "red": PatternFill(start_color='FCE4EC', end_color='FCE4EC', fill_type='solid'),
+        "blue": PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid'),
+    }
+    return openpyxl, Alignment, Font, fills
 
 
 def now():
@@ -84,6 +87,8 @@ def export():
     - Excel 无值、数据库有值 → 写入
     - 新站点 → 添加新行
     """
+    openpyxl, Alignment, Font, fills = load_openpyxl()
+    migrate_database(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -144,16 +149,16 @@ def export():
     ws.title = '提交总表'
 
     # 建立 site_url -> site_id 映射
-    site_url_to_id = {site[2].lower(): site[0] for site in sites}
+    site_url_to_id = {site[1].lower(): site[0] for site in sites}
     
     # 建立反向映射
-    site_id_to_url = {site[0]: site[2].lower() for site in sites}
+    site_id_to_url = {site[0]: site[1].lower() for site in sites}
 
     headers = ['提交地址', '类型', '权重'] + list(projects)
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color='FFFFFF')
-        cell.fill = BLUE
+        cell.fill = fills["blue"]
         cell.alignment = Alignment(horizontal='center')
 
     merged_count = 0
@@ -188,9 +193,11 @@ def export():
             cell = ws.cell(row=row_idx, column=col, value=status)
             cell.alignment = Alignment(horizontal='center')
             if status == '已提交':
-                cell.fill = GREEN
-            elif status in ('需付费', '需登录'):
-                cell.fill = YELLOW
+                cell.fill = fills["green"]
+            elif status in ('需付费', '需登录', '需验证码', '待确认'):
+                cell.fill = fills["yellow"]
+            elif status in ('失败', '已失效', '跳过'):
+                cell.fill = fills["red"]
 
     ws.column_dimensions['A'].width = 50
     ws.column_dimensions['B'].width = 15
@@ -215,7 +222,9 @@ def import_from_excel():
     if not os.path.exists(EXCEL_PATH):
         print(f'❌ Excel 文件不存在: {EXCEL_PATH}')
         return
-    
+
+    openpyxl, _, _, _ = load_openpyxl()
+    migrate_database(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('PRAGMA foreign_keys = ON')
@@ -301,6 +310,7 @@ def add_submission():
         print('  --comment "评论内容"    记录日志（博客评论必填）')
         print('  --comment-id "ID"       评论ID（成功时填写）')
         print('  --url "网址"            提交的网址（博客评论必填）')
+        print('  --reason "原因"         结构化成功/失败原因')
         print('  --name "姓名"           填写的姓名（默认: Stefan M.）')
         print('  --email "邮箱"          填写的邮箱（默认: pang3fan@gmail.com）')
         sys.exit(1)
@@ -314,6 +324,7 @@ def add_submission():
     comment = ''
     comment_id = ''
     submit_url = ''
+    result_reason = ''
     name = 'Stefan M.'
     email = 'pang3fan@gmail.com'
     
@@ -326,6 +337,8 @@ def add_submission():
             comment_id = sys.argv[i + 1]
         elif sys.argv[i] == '--url' and i + 1 < len(sys.argv):
             submit_url = sys.argv[i + 1]
+        elif sys.argv[i] == '--reason' and i + 1 < len(sys.argv):
+            result_reason = sys.argv[i + 1]
         elif sys.argv[i] == '--name' and i + 1 < len(sys.argv):
             name = sys.argv[i + 1]
         elif sys.argv[i] == '--email' and i + 1 < len(sys.argv):
@@ -334,12 +347,15 @@ def add_submission():
     # 校验状态
     if not validate_status(status):
         sys.exit(1)
+    if not result_reason and notes:
+        result_reason = notes
     
     # 校验博客评论必填参数
     if comment and not submit_url:
         print('❌ 博客评论提交必须提供 --url 参数')
         sys.exit(1)
     
+    migrate_database(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('PRAGMA foreign_keys = ON')
@@ -347,10 +363,23 @@ def add_submission():
     
     try:
         cursor.execute('''
-            INSERT INTO submissions (site_id, project_name, status, notes, updated_at) 
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(site_id, project_name) DO UPDATE SET status=?, notes=?, updated_at=?
-        ''', (site_id, project, status, notes, now_ts, status, notes, now_ts))
+            INSERT INTO submissions (
+                site_id, project_name, status, notes, updated_at,
+                target_url, comment_text, comment_id, result_reason
+            ) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(site_id, project_name) DO UPDATE SET
+                status=?,
+                notes=?,
+                updated_at=?,
+                target_url=?,
+                comment_text=?,
+                comment_id=?,
+                result_reason=?
+        ''', (
+            site_id, project, status, notes, now_ts, submit_url, comment, comment_id, result_reason,
+            status, notes, now_ts, submit_url, comment, comment_id, result_reason
+        ))
         conn.commit()
         
         # 查询站点信息用于展示和日志
@@ -364,6 +393,8 @@ def add_submission():
         print(f'   状态: {status}')
         if notes:
             print(f'   备注: {notes}')
+        if result_reason:
+            print(f'   原因: {result_reason}')
         
         # 如果有评论内容，写入日志
         if comment:
@@ -389,6 +420,7 @@ def add_submission():
 
 def stats():
     """查看统计信息"""
+    migrate_database(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
