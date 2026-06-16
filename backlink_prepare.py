@@ -12,36 +12,19 @@ import argparse
 import json
 import re
 import sqlite3
-import subprocess
-import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-ROOT = Path(__file__).parent
-DB_PATH = ROOT / "backlinks.db"
+from backlink_common import DB_PATH, close_agent_browser, migrate_database, open_agent_browser, run_agent_browser
 
 
 def agent_browser(cmd: list[str], timeout: int = 15) -> tuple[int, str, str]:
-    try:
-        r = subprocess.run(["agent-browser"] + cmd, capture_output=True, text=True, timeout=timeout)
-        return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired:
-        return -1, "", "timeout"
-    except FileNotFoundError:
-        return -2, "", "agent-browser not found"
+    return run_agent_browser(["agent-browser"] + cmd, timeout=timeout)
 
 
 def _ab(cmd: list[str], timeout: int = 15) -> tuple[int, str, str]:
     return agent_browser(cmd, timeout=timeout)
-
-
-def close_browser():
-    try:
-        subprocess.run(["agent-browser", "close"], capture_output=True, timeout=5)
-    except Exception:
-        pass
 
 
 def extract_article_summary(url: str) -> dict:
@@ -51,7 +34,7 @@ def extract_article_summary(url: str) -> dict:
     """
     result = {'title': '', 'preview': '', 'lang': '', 'success': False, 'error': ''}
 
-    rc, _, err = _ab(["open", url, "--args", "--disable-blink-features=AutomationControlled"], timeout=30)
+    rc, _, err = open_agent_browser(url, timeout=30)
     if rc != 0:
         result['error'] = err.strip() or 'open failed'
         return result
@@ -77,6 +60,7 @@ def extract_article_summary(url: str) -> dict:
 
 
 def get_pending_sites(project: str, limit: Optional[int] = None) -> list[tuple[int, str]]:
+    migrate_database(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     query = '''
@@ -127,7 +111,7 @@ def main():
         else:
             print(f"❌ {summary['error']}")
 
-        close_browser()
+        close_agent_browser()
         if i < len(pending):
             time.sleep(0.5)
 

@@ -74,12 +74,31 @@ class MultiLanguageConstantsTests(unittest.TestCase):
 class PrevalidateLabelCheckTests(unittest.TestCase):
     """Tests for Point 3: unified prevalidate/submit standard."""
 
-    def test_check_site_result_keys_include_label_accessibile(self):
+    def test_check_site_result_keys_include_label_accessible(self):
         sys.path.insert(0, str(ROOT))
         import prevalidate
         # Test that check_site returns the new key for a non-existent URL
         result = prevalidate.check_site("https://this.does.not.exist.example")
-        self.assertIn('label_accessibile', result)
+        self.assertIn('label_accessible', result)
+
+    def test_prevalidate_open_uses_automation_bypass_args(self):
+        sys.path.insert(0, str(ROOT))
+        import prevalidate
+
+        calls = []
+
+        def fake_open(url, timeout=25, proxy=None):
+            calls.append((url, timeout, proxy))
+            return -1, "", "timeout"
+
+        saved = prevalidate.open_agent_browser
+        try:
+            prevalidate.open_agent_browser = fake_open
+            prevalidate.check_site("https://example.com/post")
+        finally:
+            prevalidate.open_agent_browser = saved
+
+        self.assertEqual(calls[0], ("https://example.com/post", 25, None))
 
     def test_prepare_script_imports(self):
         """Verify backlink_prepare.py can be imported without error."""
@@ -87,6 +106,15 @@ class PrevalidateLabelCheckTests(unittest.TestCase):
         sys.path.insert(0, str(ROOT))
         spec = importlib.util.find_spec("backlink_prepare")
         self.assertIsNotNone(spec, "backlink_prepare.py should be importable")
+
+    def test_prepare_and_prevalidate_use_shared_db_path(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_common
+        import backlink_prepare
+        import prevalidate
+
+        self.assertEqual(backlink_prepare.DB_PATH, backlink_common.DB_PATH)
+        self.assertEqual(prevalidate.DB_PATH, backlink_common.DB_PATH)
 
 
 class BacklinkProjectTests(unittest.TestCase):
@@ -250,6 +278,7 @@ class BacklinkProjectTests(unittest.TestCase):
             conn.close()
 
             self.assertIn("skip_reason", site_cols)
+            self.assertIn("submit_url", sub_cols)
             self.assertIn("target_url", sub_cols)
             self.assertIn("comment_text", sub_cols)
             self.assertIn("comment_id", sub_cols)
@@ -258,6 +287,71 @@ class BacklinkProjectTests(unittest.TestCase):
             self.assertIn("需验证码", status_check)
             self.assertIn("已失效", status_check)
             self.assertIn("跳过", status_check)
+
+    def test_submit_comment_smoke_persists_submit_url_and_target_url(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "backlinks.db"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_url TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    site_type TEXT,
+                    weight INTEGER,
+                    notes TEXT,
+                    created_at TEXT,
+                    worth_submitting INTEGER DEFAULT NULL
+                );
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    status TEXT DEFAULT '已提交',
+                    notes TEXT,
+                    updated_at TEXT,
+                    UNIQUE(site_id, project_name)
+                );
+                INSERT INTO sites (site_url, site_type, created_at)
+                VALUES ('https://example.com/post', 'blog_comment', '2026-06-16 00:00:00');
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "backlink_submit.py",
+                    "--project",
+                    "demo-project",
+                    "--submit-url",
+                    "https://submit.example.com",
+                    "--site-id",
+                    "1",
+                    "--url",
+                    "https://example.com/post",
+                    "--comment",
+                    "Test comment",
+                ],
+                cwd=ROOT,
+                env={**os.environ, "BACKLINKS_DB_PATH": str(db_path)},
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            conn = sqlite3.connect(db_path)
+            row = conn.execute(
+                """
+                SELECT submit_url, target_url, comment_text
+                FROM submissions
+                WHERE site_id = 1 AND project_name = 'demo-project'
+                """
+            ).fetchone()
+            conn.close()
+
+            self.assertEqual(row, ("https://submit.example.com", "https://example.com/post", "Test comment"))
 
 
 if __name__ == "__main__":

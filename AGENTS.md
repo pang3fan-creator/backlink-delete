@@ -109,6 +109,7 @@
    ```bash
    python3 backlink_db.py add-submission <site_id> <project_name> 已提交 \
      --url "<文章URL>" \
+     --submit-url "<你要提交的外链URL>" \
      --comment "<评论内容>" \
      --comment-id "<评论ID>" \
      --reason "手动提交成功"
@@ -121,7 +122,7 @@
 - **浏览器**：全程用 agent-browser，禁止 Hermes 内置浏览器
 - **项目参数**：`--project` 和 `--submit-url` 由主人每次指定，不预设固定列表
 - **失败记录**：必须写 notes，说明具体原因
-- **提交证据**：博客评论要记录 `target_url/comment_text/comment_id/result_reason`
+- **提交证据**：博客评论要记录 `submit_url/target_url/comment_text/comment_id/result_reason`
 - **一站点三项目**：错开时间提交，不要同时提交三个
 - **自动化绕过**：部分站点检测 headless 浏览器，`agent-browser open` 命令必须加 `--args "--disable-blink-features=AutomationControlled"`；仅设置 `AGENT_BROWSER_ARGS` 环境变量不生效，须作为 open 命令参数传入
 - **Daemon 持久化陷阱**：`agent-browser close --all` 只关闭标签页/session，**不会关闭 daemon 进程**。后续 `open` 命令复用已有 daemon，`--args` 被静默忽略。必须**完整杀掉 daemon 进程**后再 open，`--args` 才会生效。每次用 `backlink_submit.py` 提交前也必须先杀 daemon，否则后续调用仍然复用旧 daemon 导致 --args 无效。

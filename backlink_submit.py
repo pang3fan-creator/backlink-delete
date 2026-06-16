@@ -23,6 +23,7 @@ from backlink_common import (
     DB_PATH,
     LOG_FILE,
     agent_browser_available,
+    build_agent_browser_open_command,
     close_agent_browser,
     get_agent_browser_proxy,
     migrate_database,
@@ -110,7 +111,7 @@ SUCCESS_INDICATORS = [
 
 
 def log_to_file(site_url: str, project: str, submit_url: str, name: str, email: str,
-                comment: str, result: str, comment_id: Optional[str] = None):
+                comment: str, result: str, comment_id: Optional[str] = None, target_url: str = ""):
     """追加一条提交记录到日志文件"""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -120,6 +121,7 @@ def log_to_file(site_url: str, project: str, submit_url: str, name: str, email: 
 姓名：{name}
 邮箱：{email}
 网址：{submit_url}
+文章：{target_url}
 评论：{comment}
 结果：{result}"""
     if comment_id:
@@ -134,6 +136,7 @@ def save_to_db(
     project: str,
     status: str,
     notes: str = "",
+    submit_url: str = "",
     target_url: str = "",
     comment_text: str = "",
     comment_id: Optional[str] = None,
@@ -148,15 +151,15 @@ def save_to_db(
     cursor.execute('''
         INSERT INTO submissions (
             site_id, project_name, status, notes, updated_at,
-            target_url, comment_text, comment_id, result_reason
+            submit_url, target_url, comment_text, comment_id, result_reason
         ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(site_id, project_name) DO UPDATE SET
             status=?, notes=?, updated_at=?,
-            target_url=?, comment_text=?, comment_id=?, result_reason=?
+            submit_url=?, target_url=?, comment_text=?, comment_id=?, result_reason=?
     ''', (
-        site_id, project, status, notes, now_ts, target_url, comment_text, comment_id, result_reason,
-        status, notes, now_ts, target_url, comment_text, comment_id, result_reason
+        site_id, project, status, notes, now_ts, submit_url, target_url, comment_text, comment_id, result_reason,
+        status, notes, now_ts, submit_url, target_url, comment_text, comment_id, result_reason
     ))
     conn.commit()
     conn.close()
@@ -338,9 +341,7 @@ def submit_comment(project: str, submit_url: str, site_id: str, article_url: str
 
     try:
         # 启动浏览器并打开页面
-        open_cmd = ["agent-browser", "open", article_url, "--args", "--disable-blink-features=AutomationControlled"]
-        if proxy:
-            open_cmd = ["agent-browser", "--proxy", proxy, "open", article_url, "--args", "--disable-blink-features=AutomationControlled"]
+        open_cmd = build_agent_browser_open_command(article_url, proxy=proxy)
         rc, _, err = _ab_open(open_cmd, timeout=60)
         # 有些站点 agent-browser open 会超时但页面实际已加载
         # 先检查浏览器是否已到了目标页面
@@ -431,7 +432,8 @@ def main():
         email=args.email,
         comment=args.comment,
         result=result['status'] if result['success'] else f"{result['status']}: {result['error']}",
-        comment_id=result.get('comment_id')
+        comment_id=result.get('comment_id'),
+        target_url=args.url
     )
     
     save_to_db(
@@ -439,6 +441,7 @@ def main():
         project=args.project,
         status=result['status'],
         notes=result.get('error') or "",
+        submit_url=args.submit_url,
         target_url=args.url,
         comment_text=args.comment,
         comment_id=result.get('comment_id'),

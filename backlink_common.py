@@ -13,6 +13,7 @@ ROOT = Path(__file__).parent
 DB_PATH = Path(os.environ.get("BACKLINKS_DB_PATH", ROOT / "backlinks.db"))
 EXCEL_PATH = Path(os.environ.get("BACKLINKS_EXCEL_PATH", ROOT / "backlinks.xlsx"))
 LOG_FILE = ROOT / "logs" / "submission.log"
+AUTOMATION_BYPASS_ARG = "--disable-blink-features=AutomationControlled"
 
 VALID_STATUSES = (
     "已提交",
@@ -61,6 +62,20 @@ def run_agent_browser(args: list[str], timeout: int = 30) -> tuple[int, str, str
         return -2, "", "agent-browser not found"
 
 
+def build_agent_browser_open_command(url: str, proxy: Optional[str] = None) -> list[str]:
+    """Build a consistent agent-browser open command with anti-detection args."""
+    command = ["agent-browser"]
+    if proxy:
+        command.extend(["--proxy", proxy])
+    command.extend(["open", url, "--args", AUTOMATION_BYPASS_ARG])
+    return command
+
+
+def open_agent_browser(url: str, timeout: int = 30, proxy: Optional[str] = None) -> tuple[int, str, str]:
+    """Open a page via agent-browser with the shared anti-detection arguments."""
+    return run_agent_browser(build_agent_browser_open_command(url, proxy=proxy), timeout=timeout)
+
+
 def close_agent_browser(all_sessions: bool = False) -> None:
     """Close agent-browser session(s). Never raises."""
     cmd = ["agent-browser", "close"]
@@ -103,6 +118,7 @@ def rebuild_submissions_table(conn: sqlite3.Connection) -> None:
             status TEXT DEFAULT '已提交',
             notes TEXT,
             updated_at TEXT,
+            submit_url TEXT,
             target_url TEXT,
             comment_text TEXT,
             comment_id TEXT,
@@ -117,11 +133,11 @@ def rebuild_submissions_table(conn: sqlite3.Connection) -> None:
         """
         INSERT INTO submissions (
             id, site_id, project_name, status, notes, updated_at,
-            target_url, comment_text, comment_id, result_reason
+            submit_url, target_url, comment_text, comment_id, result_reason
         )
         SELECT
             id, site_id, project_name, status, notes, updated_at,
-            target_url, comment_text, comment_id, result_reason
+            submit_url, target_url, comment_text, comment_id, result_reason
         FROM submissions_old
         """
     )
@@ -138,6 +154,7 @@ def migrate_database(db_path: Union[str, Path] = DB_PATH) -> None:
             conn,
             "submissions",
             {
+                "submit_url": "TEXT",
                 "target_url": "TEXT",
                 "comment_text": "TEXT",
                 "comment_id": "TEXT",

@@ -54,7 +54,7 @@ def validate_status(status):
 
 
 def log_to_file(site_url: str, project: str, submit_url: str, name: str, email: str,
-                comment: str, result: str, comment_id: str = None):
+                comment: str, result: str, comment_id: str = None, target_url: str = ""):
     """追加一条提交记录到日志文件"""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     
@@ -66,6 +66,7 @@ def log_to_file(site_url: str, project: str, submit_url: str, name: str, email: 
 姓名：{name}
 邮箱：{email}
 网址：{submit_url}
+文章：{target_url}
 评论：{comment}
 结果：{result}"""
     
@@ -309,7 +310,8 @@ def add_submission():
         print('  --notes "备注"          添加备注')
         print('  --comment "评论内容"    记录日志（博客评论必填）')
         print('  --comment-id "ID"       评论ID（成功时填写）')
-        print('  --url "网址"            提交的网址（博客评论必填）')
+        print('  --url "文章URL"         目标文章网址（博客评论必填）')
+        print('  --submit-url "网址"     Website 字段填写的外链 URL')
         print('  --reason "原因"         结构化成功/失败原因')
         print('  --name "姓名"           填写的姓名（默认: Stefan M.）')
         print('  --email "邮箱"          填写的邮箱（默认: pang3fan@gmail.com）')
@@ -323,6 +325,7 @@ def add_submission():
     notes = ''
     comment = ''
     comment_id = ''
+    target_url = ''
     submit_url = ''
     result_reason = ''
     name = 'Stefan M.'
@@ -336,6 +339,8 @@ def add_submission():
         elif sys.argv[i] == '--comment-id' and i + 1 < len(sys.argv):
             comment_id = sys.argv[i + 1]
         elif sys.argv[i] == '--url' and i + 1 < len(sys.argv):
+            target_url = sys.argv[i + 1]
+        elif sys.argv[i] == '--submit-url' and i + 1 < len(sys.argv):
             submit_url = sys.argv[i + 1]
         elif sys.argv[i] == '--reason' and i + 1 < len(sys.argv):
             result_reason = sys.argv[i + 1]
@@ -351,7 +356,7 @@ def add_submission():
         result_reason = notes
     
     # 校验博客评论必填参数
-    if comment and not submit_url:
+    if comment and not target_url:
         print('❌ 博客评论提交必须提供 --url 参数')
         sys.exit(1)
     
@@ -365,20 +370,21 @@ def add_submission():
         cursor.execute('''
             INSERT INTO submissions (
                 site_id, project_name, status, notes, updated_at,
-                target_url, comment_text, comment_id, result_reason
+                submit_url, target_url, comment_text, comment_id, result_reason
             ) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(site_id, project_name) DO UPDATE SET
                 status=?,
                 notes=?,
                 updated_at=?,
+                submit_url=?,
                 target_url=?,
                 comment_text=?,
                 comment_id=?,
                 result_reason=?
         ''', (
-            site_id, project, status, notes, now_ts, submit_url, comment, comment_id, result_reason,
-            status, notes, now_ts, submit_url, comment, comment_id, result_reason
+            site_id, project, status, notes, now_ts, submit_url, target_url, comment, comment_id, result_reason,
+            status, notes, now_ts, submit_url, target_url, comment, comment_id, result_reason
         ))
         conn.commit()
         
@@ -406,7 +412,8 @@ def add_submission():
                 email=email,
                 comment=comment,
                 result='成功' if status == '已提交' else status,
-                comment_id=comment_id
+                comment_id=comment_id,
+                target_url=target_url
             )
             print(f'✅ 日志已记录到 {LOG_FILE}')
         
