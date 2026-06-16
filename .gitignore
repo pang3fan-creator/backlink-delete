@@ -57,4 +57,8 @@ next-env.d.ts
 # backlink submission logs
 logs/
 
+# Python cache
+__pycache__/
+*.pyc
+
 /1-gitignore/

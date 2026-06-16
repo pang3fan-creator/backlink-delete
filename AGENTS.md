@@ -124,6 +124,7 @@
 - **提交证据**：博客评论要记录 `target_url/comment_text/comment_id/result_reason`
 - **一站点三项目**：错开时间提交，不要同时提交三个
 - **自动化绕过**：部分站点检测 headless 浏览器，`agent-browser open` 命令必须加 `--args "--disable-blink-features=AutomationControlled"`；仅设置 `AGENT_BROWSER_ARGS` 环境变量不生效，须作为 open 命令参数传入
+- **Daemon 持久化陷阱**：`agent-browser close --all` 只关闭标签页/session，**不会关闭 daemon 进程**。后续 `open` 命令复用已有 daemon，`--args` 被静默忽略。必须**完整杀掉 daemon 进程**后再 open，`--args` 才会生效。每次用 `backlink_submit.py` 提交前也必须先杀 daemon，否则后续调用仍然复用旧 daemon 导致 --args 无效。
 - **Daemon 卡死恢复**：`agent-browser close --all` 无效时，执行 `pkill -f agent-browser && pkill -f "Chrome for Testing"` 彻底重置
 - **脚本超时降级**：`backlink_submit.py` 连续超时时，改用 SOP 第5步的子代理手动提交流程
 
@@ -140,6 +141,9 @@ python3 prevalidate.py --project "<project_name>" --apply
 
 # 重置 agent-browser daemon（卡死时使用）
 pkill -f agent-browser && pkill -f "Chrome for Testing" && sleep 2 && echo "已重置"
+
+# 必杀 daemon（确保 --args 生效，每次提交前执行）
+kill -9 $(ps aux | grep -v grep | grep -E "agent-browser|Chrome" | awk '{print $2}') 2>/dev/null; sleep 2
 
 # 标记 worth=0（不值得）
 python3 -c "
