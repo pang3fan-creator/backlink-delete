@@ -13,7 +13,9 @@ python3 backlink_submit.py \
 """
 
 import argparse
+import os
 import re
+import sqlite3
 from datetime import datetime
 from typing import Optional
 
@@ -29,6 +31,9 @@ from backlink_common import (
 
 DEFAULT_NAME = "Stefan M."
 DEFAULT_EMAIL = "pang3fan@gmail.com"
+
+# Bypass automation detection for sites that block headless browsers
+os.environ.setdefault("AGENT_BROWSER_ARGS", "--disable-blink-features=AutomationControlled")
 
 # WordPress 评论表单字段标签（支持中英文）
 NAME_LABELS = ["Name", "Name *", "Your Name", "姓名", "昵称"]
@@ -286,15 +291,18 @@ def submit_comment(project: str, submit_url: str, site_id: str, article_url: str
 
     try:
         # 启动浏览器并打开页面
-        open_cmd = ["agent-browser", "open", article_url]
+        open_cmd = ["agent-browser", "open", article_url, "--args", "--disable-blink-features=AutomationControlled"]
         if proxy:
-            open_cmd = ["agent-browser", "--proxy", proxy, "open", article_url]
-        rc, _, err = _ab_open(open_cmd, timeout=30)
-        if rc != 0:
+            open_cmd = ["agent-browser", "--proxy", proxy, "open", article_url, "--args", "--disable-blink-features=AutomationControlled"]
+        rc, _, err = _ab_open(open_cmd, timeout=60)
+        # 有些站点 agent-browser open 会超时但页面实际已加载
+        # 先检查浏览器是否已到了目标页面
+        _, current_url, _ = _ab(["get", "url"], timeout=5)
+        if rc != 0 and not current_url:
             close_agent_browser(True)
             return _fail('已失效' if 'timeout' in err.lower() else '失败', f'页面无法打开: {err.strip() or "unknown error"}')
 
-        # 等待页面加载
+        # 等待页面加载（如果上面已经超时，这里可能会报错，忽略）
         _ab(["wait", "--load", "networkidle"], timeout=30)
 
         # 检测登录
