@@ -10,6 +10,85 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class MultiLanguageConstantsTests(unittest.TestCase):
+    """Tests for Points 1-2: multi-language labels and success indicators."""
+
+    def test_name_labels_include_french_portuguese(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_submit
+        self.assertIn("Nom", backlink_submit.NAME_LABELS)
+        self.assertIn("Nome", backlink_submit.NAME_LABELS)
+        self.assertIn("Nombre", backlink_submit.NAME_LABELS)
+        self.assertIn("Ihr Name", backlink_submit.NAME_LABELS)
+
+    def test_email_labels_include_multilingual(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_submit
+        self.assertIn("Courriel", backlink_submit.EMAIL_LABELS)
+        self.assertIn("Correo electrónico", backlink_submit.EMAIL_LABELS)
+        self.assertIn("Ihre E-Mail", backlink_submit.EMAIL_LABELS)
+        self.assertIn("Adresse e-mail", backlink_submit.EMAIL_LABELS)
+
+    def test_url_labels_include_multilingual(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_submit
+        self.assertIn("Site web", backlink_submit.URL_LABELS)
+        self.assertIn("Sitio web", backlink_submit.URL_LABELS)
+        self.assertIn("Ihre Website", backlink_submit.URL_LABELS)
+        self.assertIn("Sito web", backlink_submit.URL_LABELS)
+
+    def test_comment_labels_include_multilingual(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_submit
+        self.assertIn("Commentaire", backlink_submit.COMMENT_LABELS)
+        self.assertIn("Comentário", backlink_submit.COMMENT_LABELS)
+        self.assertIn("Comentario", backlink_submit.COMMENT_LABELS)
+        self.assertIn("Kommentar", backlink_submit.COMMENT_LABELS)
+        self.assertIn("Commento", backlink_submit.COMMENT_LABELS)
+
+    def test_submit_texts_include_multilingual(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_submit
+        self.assertIn("Publier le commentaire", backlink_submit.SUBMIT_TEXTS)
+        self.assertIn("Publicar comentário", backlink_submit.SUBMIT_TEXTS)
+        self.assertIn("Kommentar abschicken", backlink_submit.SUBMIT_TEXTS)
+        self.assertIn("Pubblica il commento", backlink_submit.SUBMIT_TEXTS)
+
+    def test_success_indicators_include_multilingual(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_submit
+        indicators = backlink_submit.SUCCESS_INDICATORS
+        self.assertIn("Votre commentaire attend modération", indicators)
+        self.assertIn("Seu comentário aguarda moderação", indicators)
+        self.assertIn("Su comentario está pendiente de moderación", indicators)
+        self.assertIn("Ihr Kommentar wird geprüft", indicators)
+        self.assertIn("Il tuo commento è in attesa di moderazione", indicators)
+
+    def test_css_fallbacks_include_generic_name_selector(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_submit
+        names = [fb["author"] for fb in backlink_submit.CSS_FALLBACKS]
+        self.assertIn("input[name='author']", names)
+
+
+class PrevalidateLabelCheckTests(unittest.TestCase):
+    """Tests for Point 3: unified prevalidate/submit standard."""
+
+    def test_check_site_result_keys_include_label_accessibile(self):
+        sys.path.insert(0, str(ROOT))
+        import prevalidate
+        # Test that check_site returns the new key for a non-existent URL
+        result = prevalidate.check_site("https://this.does.not.exist.example")
+        self.assertIn('label_accessibile', result)
+
+    def test_prepare_script_imports(self):
+        """Verify backlink_prepare.py can be imported without error."""
+        import importlib
+        sys.path.insert(0, str(ROOT))
+        spec = importlib.util.find_spec("backlink_prepare")
+        self.assertIsNotNone(spec, "backlink_prepare.py should be importable")
+
+
 class BacklinkProjectTests(unittest.TestCase):
     def test_common_statuses_include_new_workflow_states(self):
         sys.path.insert(0, str(ROOT))

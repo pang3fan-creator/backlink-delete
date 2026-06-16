@@ -54,7 +54,7 @@ def check_site(site_url: str) -> dict:
         'comment': str (额外备注)
     }
     """
-    result = {'accessible': False, 'has_form': False, 'has_url_field': False, 'reason': '', 'comment': ''}
+    result = {'accessible': False, 'has_form': False, 'has_url_field': False, 'reason': '', 'comment': '', 'label_accessibile': False}
 
     # 1. 打开页面
     rc, _, err = agent_browser(["open", site_url], timeout=25)
@@ -90,7 +90,7 @@ def check_site(site_url: str) -> dict:
         result['reason'] = 'Login wall'
         return result
 
-    # 3. DOM-level check for comment form
+    # 3. DOM-level check for comment form (with label accessibility estimation)
     js = """
     (() => {
         // Check for comment form existence
@@ -110,9 +110,21 @@ def check_site(site_url: str) -> dict:
         const closedText = document.body.innerText.toLowerCase();
         const isClosed = closedText.includes('comments are closed') || closedText.includes('commenting is closed');
 
+        // Check label texts for accessibility estimation
+        const labels = form.querySelectorAll('label');
+        const labelTexts = Array.from(labels).map(l => l.textContent.trim().toLowerCase());
+        const namePat = /name|nom|nome|nombre|ihr name|il tuo nome/i;
+        const emailPat = /email|e.mail|courriel|correo|e-mail/i;
+        const urlPat = /website|url|site web|sitio|site web|ihre website|sito web/i;
+        const hasNameLb = labelTexts.some(t => namePat.test(t));
+        const hasEmailLb = labelTexts.some(t => emailPat.test(t));
+        const hasUrlLb = labelTexts.some(t => urlPat.test(t));
+        const labelAccessible = hasNameLb && hasEmailLb && hasUrlLb;
+
         return JSON.stringify({
             has_form: !isClosed && !isHidden,
             has_url_field: hasUrl,
+            label_accessibile: labelAccessible,
             form_type: isClosed ? 'closed' : (isHidden ? 'hidden' : 'visible'),
             comment_field: comment ? (comment.name || comment.id) : null,
             url_field: url ? (url.name || url.id) : null
@@ -142,6 +154,7 @@ def check_site(site_url: str) -> dict:
 
     result['has_form'] = check.get('has_form', False)
     result['has_url_field'] = check.get('has_url_field', False)
+    label_ok = check.get('label_accessibile', False)
 
     if not result['has_form']:
         ft = check.get('form_type', '')
@@ -160,7 +173,8 @@ def check_site(site_url: str) -> dict:
     else:
         result['reason'] = 'OK'
 
-    result['comment'] = f"form={check.get('form_type', '?')}, comment={check.get('comment_field', '?')}, url={check.get('url_field', '?')}"
+    result['label_accessibile'] = label_ok
+    result['comment'] = f"form={check.get('form_type', '?')}, comment={check.get('comment_field', '?')}, url={check.get('url_field', '?')}, labels={'OK' if label_ok else 'MISS'}"
 
     return result
 
@@ -221,7 +235,10 @@ def main():
         result = check_site(url)
 
         if result['accessible'] and result['has_form'] and result['has_url_field']:
-            print(f"✅ ({result['comment']})")
+            if result.get('label_accessibile'):
+                print(f"✅ ({result['comment']})")
+            else:
+                print(f"⚠️ ({result['comment']}) — labels not matched, may fail on submit")
             passed.append((sid, url))
         else:
             print(f"❌ {result['reason']}")

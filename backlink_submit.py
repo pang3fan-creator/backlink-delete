@@ -35,21 +35,57 @@ DEFAULT_EMAIL = "pang3fan@gmail.com"
 # Bypass automation detection for sites that block headless browsers
 os.environ.setdefault("AGENT_BROWSER_ARGS", "--disable-blink-features=AutomationControlled")
 
-# WordPress 评论表单字段标签（支持中英文）
-NAME_LABELS = ["Name", "Name *", "Your Name", "姓名", "昵称"]
-EMAIL_LABELS = ["Email", "Email *", "Your Email", "邮箱", "Email Address"]
-URL_LABELS = ["Website", "URL", "Your Website", "网站", "Website URL"]
-COMMENT_LABELS = ["Comment", "Your Comment", "评论", "Leave a Comment"]
-SUBMIT_TEXTS = ["Post Comment", "Submit", "Submit Comment", "发表评论", "提交"]
+# WordPress 评论表单字段标签（支持中/英/法/葡/西/德/意）
+NAME_LABELS = [
+    "Name", "Name *", "Your Name", "姓名", "昵称",
+    "Nom", "Nom *",
+    "Nome", "Nome *", "Seu nome",
+    "Nombre", "Nombre *", "Tu nombre",
+    "Name *", "Ihr Name",
+    "Nome", "Nome *", "Il tuo nome",
+]
+EMAIL_LABELS = [
+    "Email", "Email *", "Your Email", "邮箱", "Email Address",
+    "E-mail", "Adresse e-mail", "Courriel",
+    "E-mail", "Seu e-mail",
+    "Correo electrónico", "Correo",
+    "E-Mail *", "Ihre E-Mail",
+    "Email", "La tua email",
+]
+URL_LABELS = [
+    "Website", "URL", "Your Website", "网站", "Website URL",
+    "Site web", "Site Web",
+    "Site", "Seu site",
+    "Sitio web", "Web",
+    "Website", "Ihre Website",
+    "Sito web",
+]
+COMMENT_LABELS = [
+    "Comment", "Your Comment", "评论", "Leave a Comment",
+    "Commentaire", "Votre commentaire",
+    "Comentário", "Seu comentário",
+    "Comentario", "Tu comentario",
+    "Kommentar", "Ihr Kommentar",
+    "Commento", "Il tuo commento",
+]
+SUBMIT_TEXTS = [
+    "Post Comment", "Submit", "Submit Comment", "发表评论", "提交",
+    "Publier le commentaire", "Envoyer", "Soumettre",
+    "Publicar comentário", "Enviar",
+    "Publicar comentario", "Enviar",
+    "Kommentar abschicken", "Abschicken", "Senden",
+    "Pubblica il commento", "Invia",
+]
 
-# CSS 选择器回退（标准 WordPress 表单）
+# CSS 选择器回退（标准 WordPress 表单 + 通用 name 属性选择器）
 CSS_FALLBACKS = [
     {"author": "#author", "email": "#email", "url": "#url", "comment": "#comment", "submit": "#submit"},
     {"author": "#comment-author", "email": "#comment-email", "url": "#comment-url", "comment": "#comment-comment", "submit": "#comment-submit"},
     {"author": "#comment_author", "email": "#comment_email", "url": "#comment_url", "comment": "#comment", "submit": "#comment-submit"},
+    {"author": "input[name='author']", "email": "input[name='email']", "url": "input[name='url']", "comment": "textarea[name='comment']", "submit": "#submit, button[type='submit'], input[type='submit']"},
 ]
 
-# 成功提示关键词
+# 成功提示关键词（支持中/英/法/葡/西/德/意）
 SUCCESS_INDICATORS = [
     '评论待审核',
     'Your comment is awaiting moderation',
@@ -59,6 +95,17 @@ SUCCESS_INDICATORS = [
     'awaiting moderation',
     '评论提交成功',
     '您的评论正在等待审核',
+    'Votre commentaire attend modération',
+    'Votre commentaire a été envoyé',
+    'Merci pour votre commentaire',
+    'Seu comentário aguarda moderação',
+    'Obrigado pelo seu comentário',
+    'Su comentario está pendiente de moderación',
+    'Gracias por su comentario',
+    'Ihr Kommentar wird geprüft',
+    'Vielen Dank für Ihren Kommentar',
+    'Il tuo commento è in attesa di moderazione',
+    'Grazie per il tuo commento',
 ]
 
 
