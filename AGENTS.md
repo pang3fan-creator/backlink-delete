@@ -72,6 +72,9 @@
 
 2. **评估 worth_submitting（如果为 NULL）**
    - 用 agent-browser 打开页面
+   ```bash
+   kill -9 $(ps aux | grep -v grep | grep -E "agent-browser|Chrome" | awk '{print $2}') 2>/dev/null; sleep 2
+   ```
    - **DOM 级检查**（用 `eval` 验证，不能只看页面文字）：
      ```
      // 检查是否有评论表单
@@ -80,7 +83,8 @@
      document.querySelector('input[name="url"], input[name="website"]')
      ```
    - 有评论表单 **且** 有 URL/Website 字段 → worth=1
-   - 明确硬障碍（404 / DNS / SSL / 长期超时 / 明确无 Website 字段等）→ worth=0，并写 `skip_reason`
+   - 页面不可访问 / 404 / SSL / 长期超时 → 本次提交记录用 `已失效`，同时 worth=0 并写 `skip_reason`
+   - 明确无 Website 字段 / 明确拒绝外部链接等硬障碍 → worth=0，并写 `skip_reason`
    - 登录墙 / 验证码 / Cloudflare / 自动化没找到表单 / 表单复杂 → 优先保留为 worth=1；如果信息还不足，再保留 NULL
    ```bash
    python3 -c "
