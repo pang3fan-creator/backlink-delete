@@ -100,6 +100,18 @@ class PrevalidateLabelCheckTests(unittest.TestCase):
 
         self.assertEqual(calls[0], ("https://example.com/post", 25, None))
 
+    def test_prevalidate_apply_only_marks_hard_blockers_worth_zero(self):
+        sys.path.insert(0, str(ROOT))
+        import backlink_common
+
+        self.assertFalse(backlink_common.is_hard_worth_zero_reason("Login wall"))
+        self.assertFalse(backlink_common.is_hard_worth_zero_reason("Captcha required"))
+        self.assertFalse(backlink_common.is_hard_worth_zero_reason("Cloudflare challenge on page"))
+        self.assertFalse(backlink_common.is_hard_worth_zero_reason("No comment form in DOM"))
+        self.assertTrue(backlink_common.is_hard_worth_zero_reason("404 not found"))
+        self.assertTrue(backlink_common.is_hard_worth_zero_reason("SSL error"))
+        self.assertTrue(backlink_common.is_hard_worth_zero_reason("No Website/URL field in comment form"))
+
     def test_prepare_script_imports(self):
         """Verify backlink_prepare.py can be imported without error."""
         import importlib
@@ -187,7 +199,7 @@ class BacklinkProjectTests(unittest.TestCase):
             shutil_mod.which = saved_which
             backlink_common._AGENT_BROWSER_PATH = None
 
-    def test_optional_openpyxl_keeps_stats_command_available(self):
+    def test_backlink_db_stats_command_available_without_excel(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "backlinks.db"
             conn = sqlite3.connect(db_path)
@@ -209,16 +221,12 @@ class BacklinkProjectTests(unittest.TestCase):
                     status TEXT DEFAULT '已提交',
                     notes TEXT,
                     updated_at TEXT,
-                    target_url TEXT,
-                    comment_text TEXT,
-                    comment_id TEXT,
-                    result_reason TEXT,
                     UNIQUE(site_id, project_name)
                 );
-                INSERT INTO sites (site_url, site_type, weight, created_at) VALUES
-                    ('https://example.com', 'blog_comment', 10, '2026-06-16 00:00:00');
+                INSERT INTO sites (site_url, site_type, weight, created_at)
+                VALUES ('https://example.com', 'blog_comment', 10, '2026-06-18 00:00:00');
                 INSERT INTO submissions (site_id, project_name, status, updated_at)
-                    VALUES (1, 'extractkeywords.com', '已提交', '2026-06-16 00:00:00');
+                VALUES (1, 'extractkeywords.com', '已提交', '2026-06-18 00:00:00');
                 """
             )
             conn.commit()
@@ -227,13 +235,90 @@ class BacklinkProjectTests(unittest.TestCase):
             proc = subprocess.run(
                 [sys.executable, "backlink_db.py", "stats"],
                 cwd=ROOT,
-                env={**os.environ, "BACKLINKS_DB_PATH": str(db_path), "BACKLINKS_EXCEL_PATH": str(Path(tmpdir) / "backlinks.xlsx")},
+                env={**os.environ, "BACKLINKS_DB_PATH": str(db_path)},
                 capture_output=True,
                 text=True,
             )
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("数据库统计", proc.stdout)
+            self.assertIn("extractkeywords.com", proc.stdout)
+
+    def test_backlink_db_add_submission_records_manual_result(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "backlinks.db"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_url TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    site_type TEXT,
+                    weight INTEGER,
+                    notes TEXT,
+                    created_at TEXT,
+                    worth_submitting INTEGER DEFAULT NULL
+                );
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    status TEXT DEFAULT '已提交',
+                    notes TEXT,
+                    updated_at TEXT,
+                    UNIQUE(site_id, project_name)
+                );
+                INSERT INTO sites (site_url, site_type, created_at)
+                VALUES ('https://example.com/post', 'blog_comment', '2026-06-18 00:00:00');
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "backlink_db.py",
+                    "add-submission",
+                    "1",
+                    "demo-project",
+                    "已提交",
+                    "--url",
+                    "https://example.com/post",
+                    "--submit-url",
+                    "https://submit.example.com",
+                    "--comment",
+                    "Manual comment",
+                    "--reason",
+                    "手动提交成功",
+                ],
+                cwd=ROOT,
+                env={**os.environ, "BACKLINKS_DB_PATH": str(db_path)},
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            conn = sqlite3.connect(db_path)
+            row = conn.execute(
+                """
+                SELECT status, submit_url, target_url, comment_text, result_reason
+                FROM submissions
+                WHERE site_id = 1 AND project_name = 'demo-project'
+                """
+            ).fetchone()
+            conn.close()
+
+            self.assertEqual(
+                row,
+                (
+                    "已提交",
+                    "https://submit.example.com",
+                    "https://example.com/post",
+                    "Manual comment",
+                    "手动提交成功",
+                ),
+            )
 
     def test_database_migration_adds_tracking_columns_and_statuses(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -278,6 +363,7 @@ class BacklinkProjectTests(unittest.TestCase):
             conn.close()
 
             self.assertIn("skip_reason", site_cols)
+            self.assertIn("consecutive_failures", site_cols)
             self.assertIn("submit_url", sub_cols)
             self.assertIn("target_url", sub_cols)
             self.assertIn("comment_text", sub_cols)
@@ -287,6 +373,56 @@ class BacklinkProjectTests(unittest.TestCase):
             self.assertIn("需验证码", status_check)
             self.assertIn("已失效", status_check)
             self.assertIn("跳过", status_check)
+
+    def test_database_migration_creates_project_views(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "backlinks.db"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_url TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    site_type TEXT,
+                    weight INTEGER,
+                    notes TEXT,
+                    created_at TEXT,
+                    worth_submitting INTEGER DEFAULT NULL
+                );
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    status TEXT DEFAULT '已提交',
+                    notes TEXT,
+                    updated_at TEXT,
+                    UNIQUE(site_id, project_name)
+                );
+                INSERT INTO sites (site_url, site_type, worth_submitting)
+                VALUES ('https://example.com/post', 'blog_comment', 1);
+                INSERT INTO submissions (site_id, project_name, status, updated_at)
+                VALUES (1, 'heicpdf.to', '已提交', '2026-06-18 00:00:00');
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            sys.path.insert(0, str(ROOT))
+            import backlink_common
+
+            backlink_common.migrate_database(db_path)
+
+            conn = sqlite3.connect(db_path)
+            view = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='view' AND name='view_heicpdf_to'"
+            ).fetchone()
+            row = conn.execute(
+                "SELECT site_url, status FROM view_heicpdf_to WHERE site_id = 1"
+            ).fetchone()
+            conn.close()
+
+            self.assertEqual(view, ("view_heicpdf_to",))
+            self.assertEqual(row, ("https://example.com/post", "已提交"))
 
     def test_submit_comment_smoke_persists_submit_url_and_target_url(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -352,6 +488,114 @@ class BacklinkProjectTests(unittest.TestCase):
             conn.close()
 
             self.assertEqual(row, ("https://submit.example.com", "https://example.com/post", "Test comment"))
+
+    def test_apply_site_worth_success_recovers_worth_one(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "backlinks.db"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_url TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    site_type TEXT,
+                    weight INTEGER,
+                    notes TEXT,
+                    created_at TEXT,
+                    worth_submitting INTEGER DEFAULT NULL,
+                    skip_reason TEXT
+                );
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    status TEXT DEFAULT '已提交',
+                    notes TEXT,
+                    updated_at TEXT,
+                    UNIQUE(site_id, project_name)
+                );
+                INSERT INTO sites (site_url, worth_submitting, skip_reason)
+                VALUES ('https://example.com/post', 0, 'old reason');
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            sys.path.insert(0, str(ROOT))
+            import backlink_common
+            import backlink_submit
+
+            old_common_db = backlink_common.DB_PATH
+            old_submit_db = backlink_submit.DB_PATH
+            try:
+                backlink_common.DB_PATH = db_path
+                backlink_submit.DB_PATH = db_path
+                backlink_submit.apply_site_worth_after_submission("1", True, "success_text: awaiting moderation")
+
+                conn = sqlite3.connect(db_path)
+                row = conn.execute(
+                    "SELECT worth_submitting, skip_reason, consecutive_failures FROM sites WHERE id = 1"
+                ).fetchone()
+                conn.close()
+            finally:
+                backlink_common.DB_PATH = old_common_db
+                backlink_submit.DB_PATH = old_submit_db
+
+            self.assertEqual(row, (1, None, 0))
+
+    def test_apply_site_worth_failure_keeps_worth_one_unless_hard_blocker(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "backlinks.db"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_url TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    site_type TEXT,
+                    weight INTEGER,
+                    notes TEXT,
+                    created_at TEXT,
+                    worth_submitting INTEGER DEFAULT NULL,
+                    skip_reason TEXT
+                );
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    status TEXT DEFAULT '已提交',
+                    notes TEXT,
+                    updated_at TEXT,
+                    UNIQUE(site_id, project_name)
+                );
+                INSERT INTO sites (site_url, worth_submitting, skip_reason)
+                VALUES ('https://example.com/post', 1, NULL);
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            sys.path.insert(0, str(ROOT))
+            import backlink_common
+            import backlink_submit
+
+            old_common_db = backlink_common.DB_PATH
+            old_submit_db = backlink_submit.DB_PATH
+            try:
+                backlink_common.DB_PATH = db_path
+                backlink_submit.DB_PATH = db_path
+                backlink_submit.apply_site_worth_after_submission("1", False, "找不到评论表单")
+
+                conn = sqlite3.connect(db_path)
+                row = conn.execute(
+                    "SELECT worth_submitting, skip_reason, consecutive_failures FROM sites WHERE id = 1"
+                ).fetchone()
+                conn.close()
+            finally:
+                backlink_common.DB_PATH = old_common_db
+                backlink_submit.DB_PATH = old_submit_db
+
+            self.assertEqual(row, (1, None, 1))
 
 
 if __name__ == "__main__":

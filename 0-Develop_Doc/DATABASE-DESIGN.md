@@ -1,6 +1,6 @@
 # Backlink 提交管理数据库
 
-最后更新：2026-06-16
+最后更新：2026-06-18
 
 ## 当前 Schema
 
@@ -17,6 +17,7 @@ erDiagram
         datetime created_at
         int worth_submitting "NULL/0/1"
         string skip_reason
+        int consecutive_failures
     }
 
     submissions {
@@ -26,11 +27,13 @@ erDiagram
         string status
         string notes
         datetime updated_at
+        string submit_url
         string target_url
         string comment_text
         string comment_id
         string result_reason
     }
+
 ```
 
 ## 关系规则
@@ -39,6 +42,7 @@ erDiagram
 2. 一个项目对一个站点只有一条提交记录：`UNIQUE(site_id, project_name)`。
 3. 删除站点时级联删除提交记录：`ON DELETE CASCADE`。
 4. `sites.site_url` 大小写不敏感去重。
+5. 每个项目可自动生成只读视图：`view_<项目名归一化>`，例如 `view_heicpdf_to`。
 
 ## 状态约束
 
@@ -57,8 +61,10 @@ erDiagram
 
 ## 字段使用规则
 
-- `sites.worth_submitting`: `NULL` 未评估，`1` 值得提交，`0` 不值得提交。
-- `sites.skip_reason`: 当 `worth_submitting=0` 时必须写明原因。
+- `sites.worth_submitting`: `NULL` 未评估，`1` 值得继续尝试，`0` 硬性不值得。
+- `sites.skip_reason`: 当 `worth_submitting=0` 时必须写明硬障碍原因。
+- `sites.consecutive_failures`: 自动提交连续失败观察值，成功后清零，不直接等同于 `worth=0`。
+- `submissions.submit_url`: Website 字段填写的外链 URL。
 - `submissions.target_url`: 本次提交的具体页面 URL，博客评论通常是文章页。
 - `submissions.comment_text`: 实际提交的评论正文。
 - `submissions.comment_id`: 成功后能拿到评论 ID 时填写。
@@ -68,6 +74,12 @@ erDiagram
 ## 常用查询
 
 ```sql
+-- 查看某项目视图（由迁移自动创建）
+SELECT *
+FROM view_heicpdf_to
+ORDER BY weight DESC NULLS LAST
+LIMIT 20;
+
 -- 查看 extractkeywords.com 还没处理的 blog_comment
 SELECT s.id, s.site_url, s.worth_submitting, s.skip_reason
 FROM sites s

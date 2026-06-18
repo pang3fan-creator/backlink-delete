@@ -11,7 +11,6 @@ from typing import Optional, Union
 
 ROOT = Path(__file__).parent
 DB_PATH = Path(os.environ.get("BACKLINKS_DB_PATH", ROOT / "backlinks.db"))
-EXCEL_PATH = Path(os.environ.get("BACKLINKS_EXCEL_PATH", ROOT / "backlinks.xlsx"))
 LOG_FILE = ROOT / "logs" / "submission.log"
 AUTOMATION_BYPASS_ARG = "--disable-blink-features=AutomationControlled"
 
@@ -27,6 +26,46 @@ VALID_STATUSES = (
 )
 
 STATUS_SQL = ", ".join(f"'{status}'" for status in VALID_STATUSES)
+
+HARD_WORTH_ZERO_PATTERNS = (
+    "404",
+    "not found",
+    "dns",
+    "name_not_resolved",
+    "err_name_not_resolved",
+    "could not resolve host",
+    "nodename nor servname",
+    "ssl",
+    "certificate",
+    "domain for sale",
+    "域名出售",
+    "site closed",
+    "网站已关闭",
+    "malware",
+    "恶意",
+    "no website/url field",
+    "no website field",
+    "no url field",
+    "不接受外部链接",
+)
+
+LONG_TERM_TIMEOUT_PATTERNS = (
+    "long-term timeout",
+    "repeated timeout",
+    "multiple timeouts",
+    "长期超时",
+    "多次超时",
+)
+
+
+def is_hard_worth_zero_reason(reason: str) -> bool:
+    """Return True only for site-level blockers, not one-off automation failures."""
+    if not reason:
+        return False
+    text = reason.lower()
+    if any(pattern in text for pattern in HARD_WORTH_ZERO_PATTERNS):
+        return True
+    return any(pattern in text for pattern in LONG_TERM_TIMEOUT_PATTERNS)
 
 # Agent-browser integration
 
@@ -101,6 +140,50 @@ def table_sql(conn: sqlite3.Connection, table: str) -> str:
     return row[0] if row else ""
 
 
+def project_view_name(project_name: str) -> str:
+    safe = "".join(ch.lower() if ch.isalnum() else "_" for ch in project_name)
+    safe = "_".join(part for part in safe.split("_") if part)
+    return f"view_{safe or 'project'}"
+
+
+def ensure_project_views(conn: sqlite3.Connection) -> None:
+    projects = [
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT project_name FROM submissions WHERE project_name IS NOT NULL AND project_name != ''"
+        )
+    ]
+    for project in projects:
+        view_name = project_view_name(project)
+        escaped_project = project.replace("'", "''")
+        conn.execute(f'DROP VIEW IF EXISTS "{view_name}"')
+        conn.execute(
+            f"""
+            CREATE VIEW "{view_name}" AS
+            SELECT
+                s.id AS site_id,
+                s.site_url,
+                s.site_type,
+                s.weight,
+                s.worth_submitting,
+                s.skip_reason,
+                s.consecutive_failures,
+                sb.status,
+                sb.notes,
+                sb.submit_url,
+                sb.target_url,
+                sb.comment_text,
+                sb.comment_id,
+                sb.result_reason,
+                sb.updated_at
+            FROM sites s
+            LEFT JOIN submissions sb
+              ON s.id = sb.site_id
+             AND sb.project_name = '{escaped_project}'
+            """
+        )
+
+
 def submissions_status_check_is_current(conn: sqlite3.Connection) -> bool:
     sql = table_sql(conn, "submissions")
     return all(status in sql for status in VALID_STATUSES)
@@ -149,7 +232,14 @@ def migrate_database(db_path: Union[str, Path] = DB_PATH) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("PRAGMA foreign_keys = ON")
-        ensure_columns(conn, "sites", {"skip_reason": "TEXT"})
+        ensure_columns(
+            conn,
+            "sites",
+            {
+                "skip_reason": "TEXT",
+                "consecutive_failures": "INTEGER DEFAULT 0",
+            },
+        )
         ensure_columns(
             conn,
             "submissions",
@@ -163,6 +253,7 @@ def migrate_database(db_path: Union[str, Path] = DB_PATH) -> None:
         )
         if not submissions_status_check_is_current(conn):
             rebuild_submissions_table(conn)
+        ensure_project_views(conn)
         conn.commit()
     finally:
         conn.close()

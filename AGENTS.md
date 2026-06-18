@@ -15,6 +15,9 @@
 3. **评论正文不带网址** — 更自然，通过率更高
 4. **先评估再提交** — 不值得的标记 worth=0 后跳过
 5. **失败原因结构化** — `submissions.notes/result_reason` 和 `sites.skip_reason` 必须写清楚
+6. **worth=0 从严** — 只标记站点级硬障碍，不用来表示一次预检或自动化失败
+7. **不再使用 Excel** — `backlinks.xlsx` 已废弃；`backlink_db.py` 仅保留 SQLite 辅助命令
+8. **迁移会补视图** — `migrate_database()` 会补 `consecutive_failures` 并生成 `view_<project>` 只读视图
 
 ---
 
@@ -38,8 +41,8 @@
 | 值 | 含义 | 必填说明 |
 |----|------|----------|
 | NULL | 未评估 | 下次继续评估 |
-| 1 | 值得提交 | 有评论表单且有 Website/URL 字段 |
-| 0 | 不值得提交 | 必须写 `sites.skip_reason` |
+| 1 | 值得继续尝试 | 自动可提交、人工可能可处理、历史成功过都归这里 |
+| 0 | 硬性不值得 | 必须写 `sites.skip_reason`，仅限 404/DNS/SSL/长期超时/明确无 Website 字段等硬障碍 |
 
 ---
 
@@ -75,7 +78,8 @@
      document.querySelector('input[name="url"], input[name="website"]')
      ```
    - 有评论表单 **且** 有 URL/Website 字段 → worth=1
-   - 无表单 / Jetpack iframe / 评论区关闭（表单 `offsetParent === null`）/ 无 Website 字段 → worth=0，并写 `skip_reason`
+   - 明确硬障碍（404 / DNS / SSL / 长期超时 / 明确无 Website 字段等）→ worth=0，并写 `skip_reason`
+   - 登录墙 / 验证码 / Cloudflare / 自动化没找到表单 / 表单复杂 → 不轻易标 worth=0，记录原因后保留给主人判断
    ```bash
    python3 -c "
    import sqlite3
@@ -90,7 +94,7 @@
    python3 prevalidate.py --project "<project_name>" --apply
    ```
    - 对每个 worth=1 未提交站点，自动检查：页面可达 → 有评论表单 → 有 Website 字段
-   - `--apply` 自动标记不通过站点为 worth=0 + skip_reason
+   - `--apply` 只把硬障碍标记为 worth=0 + skip_reason；普通预检失败保留 worth，不降级
    - 通过预检的站点才进入提交阶段，避免打开文章写评论后发现没表单
 
 4. **提交评论（通过预检的站点）**
@@ -123,11 +127,21 @@
 - **项目参数**：`--project` 和 `--submit-url` 由主人每次指定，不预设固定列表
 - **失败记录**：必须写 notes，说明具体原因
 - **提交证据**：博客评论要记录 `submit_url/target_url/comment_text/comment_id/result_reason`
+- **日志定位**：`logs/submission.log` 仅作追加审计留痕；主数据源仍是 SQLite 的 `submissions`
 - **一站点三项目**：错开时间提交，不要同时提交三个
 - **自动化绕过**：部分站点检测 headless 浏览器，`agent-browser open` 命令必须加 `--args "--disable-blink-features=AutomationControlled"`；仅设置 `AGENT_BROWSER_ARGS` 环境变量不生效，须作为 open 命令参数传入
 - **Daemon 持久化陷阱**：`agent-browser close --all` 只关闭标签页/session，**不会关闭 daemon 进程**。后续 `open` 命令复用已有 daemon，`--args` 被静默忽略。必须**完整杀掉 daemon 进程**后再 open，`--args` 才会生效。每次用 `backlink_submit.py` 提交前也必须先杀 daemon，否则后续调用仍然复用旧 daemon 导致 --args 无效。
 - **Daemon 卡死恢复**：`agent-browser close --all` 无效时，执行 `pkill -f agent-browser && pkill -f "Chrome for Testing"` 彻底重置
 - **脚本超时降级**：`backlink_submit.py` 连续超时时，改用 SOP 第5步的子代理手动提交流程
+
+---
+
+## 关键文件
+
+- `backlink_common.py`：共享迁移、状态常量、agent-browser 命令、项目视图生成
+- `backlink_submit.py`：自动提交评论并写 `submissions` / 更新 worth
+- `prevalidate.py`：提交前 DOM 预检，只对硬障碍降级
+- `backlink_db.py`：仅保留 `stats` 和 `add-submission`；不要恢复 Excel import/export
 
 ---
 
@@ -137,7 +151,10 @@
 # 查看统计
 python3 backlink_db.py stats
 
-# 预检 worth=1 站点（自动标记不通过的）
+# 回归测试
+python3 -m unittest tests/test_backlink_project.py
+
+# 预检 worth=1 站点（只自动标记硬障碍）
 python3 prevalidate.py --project "<project_name>" --apply
 
 # 重置 agent-browser daemon（卡死时使用）
@@ -146,7 +163,7 @@ pkill -f agent-browser && pkill -f "Chrome for Testing" && sleep 2 && echo "已�
 # 必杀 daemon（确保 --args 生效，每次提交前执行）
 kill -9 $(ps aux | grep -v grep | grep -E "agent-browser|Chrome" | awk '{print $2}') 2>/dev/null; sleep 2
 
-# 标记 worth=0（不值得）
+# 标记 worth=0（硬性不值得，必须是站点级硬障碍）
 python3 -c "
 import sqlite3
 db = sqlite3.connect('backlinks.db')
@@ -154,7 +171,7 @@ db.execute('UPDATE sites SET worth_submitting = 0, skip_reason = \"无 Website �
 db.commit()
 "
 
-# 标记 worth=1（值得）
+# 标记 worth=1（值得继续尝试，并清空旧 skip_reason）
 python3 -c "
 import sqlite3
 db = sqlite3.connect('backlinks.db')

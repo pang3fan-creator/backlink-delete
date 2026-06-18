@@ -8,7 +8,14 @@ import json
 import sqlite3
 import time
 
-from backlink_common import DB_PATH, close_agent_browser, migrate_database, open_agent_browser, run_agent_browser
+from backlink_common import (
+    DB_PATH,
+    close_agent_browser,
+    is_hard_worth_zero_reason,
+    migrate_database,
+    open_agent_browser,
+    run_agent_browser,
+)
 
 
 def agent_browser(cmd, timeout=15):
@@ -51,6 +58,10 @@ def check_site(site_url):
     if "cloudflare" in body_lower and ("verify" in body_lower or "challenge" in body_lower):
         result["accessible"] = False
         result["reason"] = "Cloudflare challenge on page"
+        return result
+    if "captcha" in body_lower or "recaptcha" in body_lower or "hcaptcha" in body_lower:
+        result["accessible"] = False
+        result["reason"] = "Captcha required"
         return result
     if "wp-login" in body_lower or "please log in" in body_lower:
         result["accessible"] = False
@@ -231,10 +242,13 @@ def main():
         print()
 
     if args.apply and failed:
-        print("🔧 自动标记不通过站点为 worth=0 ...")
+        print("🔧 自动处理不通过站点 ...")
         for sid, url, reason in failed:
-            mark_site(sid, 0, reason)
-            print(f"   ID={sid}: worth=0 ({reason})")
+            if is_hard_worth_zero_reason(reason):
+                mark_site(sid, 0, reason)
+                print(f"   ID={sid}: worth=0 ({reason})")
+            else:
+                print(f"   ID={sid}: 保留 worth，不降级 ({reason})")
         print()
 
     if not args.apply and failed:

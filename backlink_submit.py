@@ -26,6 +26,7 @@ from backlink_common import (
     build_agent_browser_open_command,
     close_agent_browser,
     get_agent_browser_proxy,
+    is_hard_worth_zero_reason,
     migrate_database,
     run_agent_browser,
 )
@@ -163,6 +164,46 @@ def save_to_db(
     ))
     conn.commit()
     conn.close()
+
+
+def apply_site_worth_after_submission(site_id: str, success: bool, reason: str) -> None:
+    migrate_database(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        if success:
+            conn.execute(
+                """
+                UPDATE sites
+                SET worth_submitting = 1,
+                    skip_reason = NULL,
+                    consecutive_failures = 0
+                WHERE id = ?
+                """,
+                (site_id,),
+            )
+        elif is_hard_worth_zero_reason(reason):
+            conn.execute(
+                """
+                UPDATE sites
+                SET worth_submitting = 0,
+                    skip_reason = ?,
+                    consecutive_failures = COALESCE(consecutive_failures, 0) + 1
+                WHERE id = ?
+                """,
+                (reason, site_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE sites
+                SET consecutive_failures = COALESCE(consecutive_failures, 0) + 1
+                WHERE id = ?
+                """,
+                (site_id,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ---- agent-browser 表单操作 ----
@@ -446,6 +487,12 @@ def main():
         comment_text=args.comment,
         comment_id=result.get('comment_id'),
         result_reason=result.get('result_reason') or result.get('error') or ""
+    )
+
+    apply_site_worth_after_submission(
+        args.site_id,
+        result["success"],
+        result.get("result_reason") or result.get("error") or "",
     )
     
     if result['success']:
