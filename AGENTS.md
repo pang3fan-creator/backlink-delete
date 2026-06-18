@@ -44,6 +44,8 @@
 | 1 | 值得继续尝试 | 自动可提交、人工可能可处理、历史成功过都归这里 |
 | 0 | 硬性不值得 | 必须写 `sites.skip_reason`，仅限 404/DNS/SSL/长期超时/明确无 Website 字段等硬障碍 |
 
+详细判定见 `0-Develop_Doc/WORTH_SUBMITTING_LOGIC.md`。
+
 ---
 
 ## 提交流程（blog_comment）

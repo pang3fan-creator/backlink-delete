@@ -183,7 +183,7 @@ def mark_site(site_id, worth, reason):
 def main():
     parser = argparse.ArgumentParser(description="批量预检 worth=1 站点是否有有效评论表单")
     parser.add_argument("--project", required=True, help="项目名称")
-    parser.add_argument("--apply", action="store_true", help="自动标记不合格站点为 worth=0")
+    parser.add_argument("--apply", action="store_true", help="只自动标记硬障碍站点为 worth=0")
     args = parser.parse_args()
 
     print(f"🔍 预检项目: {args.project}")
