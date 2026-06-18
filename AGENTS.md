@@ -60,7 +60,9 @@
      SELECT s.id, s.site_url, s.worth_submitting
      FROM sites s
      LEFT JOIN submissions sb ON s.id = sb.site_id AND sb.project_name = '<project_name>'
-     WHERE s.site_type = 'blog_comment' AND sb.id IS NULL
+     WHERE s.site_type = 'blog_comment'
+       AND sb.id IS NULL
+       AND COALESCE(s.worth_submitting, 1) != 0
      LIMIT 5
    ''')
    for r in cur.fetchall():
@@ -79,7 +81,7 @@
      ```
    - 有评论表单 **且** 有 URL/Website 字段 → worth=1
    - 明确硬障碍（404 / DNS / SSL / 长期超时 / 明确无 Website 字段等）→ worth=0，并写 `skip_reason`
-   - 登录墙 / 验证码 / Cloudflare / 自动化没找到表单 / 表单复杂 → 不轻易标 worth=0，记录原因后保留给主人判断
+   - 登录墙 / 验证码 / Cloudflare / 自动化没找到表单 / 表单复杂 → 优先保留为 worth=1；如果信息还不足，再保留 NULL
    ```bash
    python3 -c "
    import sqlite3
@@ -88,9 +90,19 @@
    db.commit()
    "
    ```
+   硬障碍标记 worth=0：
+   ```bash
+   python3 -c "
+   import sqlite3
+   db = sqlite3.connect('backlinks.db')
+   db.execute('UPDATE sites SET worth_submitting = 0, skip_reason = \"<硬障碍原因>\" WHERE id = <site_id>')
+   db.commit()
+   "
+   ```
 
 3. **预检 worth=1 站点（提交前必做）**
    ```bash
+   kill -9 $(ps aux | grep -v grep | grep -E "agent-browser|Chrome" | awk '{print $2}') 2>/dev/null; sleep 2
    python3 prevalidate.py --project "<project_name>" --apply
    ```
    - 对每个 worth=1 未提交站点，自动检查：页面可达 → 有评论表单 → 有 Website 字段
@@ -99,6 +111,7 @@
 
 4. **提交评论（通过预检的站点）**
    ```bash
+   kill -9 $(ps aux | grep -v grep | grep -E "agent-browser|Chrome" | awk '{print $2}') 2>/dev/null; sleep 2
    python3 backlink_submit.py \
      --project "<project_name>" \
      --submit-url "<你要提交的外链URL>" \
