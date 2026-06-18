@@ -13,7 +13,6 @@ python3 backlink_submit.py \
 """
 
 import argparse
-import os
 import re
 import sqlite3
 from datetime import datetime
@@ -24,18 +23,15 @@ from backlink_common import (
     LOG_FILE,
     agent_browser_available,
     build_agent_browser_open_command,
-    close_agent_browser,
     get_agent_browser_proxy,
     is_hard_worth_zero_reason,
     migrate_database,
+    reset_agent_browser_daemon,
     run_agent_browser,
 )
 
 DEFAULT_NAME = "Stefan M."
 DEFAULT_EMAIL = "pang3fan@gmail.com"
-
-# Bypass automation detection for sites that block headless browsers
-os.environ.setdefault("AGENT_BROWSER_ARGS", "--disable-blink-features=AutomationControlled")
 
 # WordPress 评论表单字段标签（支持中/英/法/葡/西/德/意）
 NAME_LABELS = [
@@ -380,6 +376,7 @@ def submit_comment(project: str, submit_url: str, site_id: str, article_url: str
             'error': error, 'form_found': form_found, 'form_submitted': form_submitted
         }
 
+    reset_agent_browser_daemon()
     try:
         # 启动浏览器并打开页面
         open_cmd = build_agent_browser_open_command(article_url, proxy=proxy)
@@ -388,7 +385,6 @@ def submit_comment(project: str, submit_url: str, site_id: str, article_url: str
         # 先检查浏览器是否已到了目标页面
         _, current_url, _ = _ab(["get", "url"], timeout=5)
         if rc != 0 and not current_url:
-            close_agent_browser(True)
             return _fail('已失效' if 'timeout' in err.lower() else '失败', f'页面无法打开: {err.strip() or "unknown error"}')
 
         # 等待页面加载（如果上面已经超时，这里可能会报错，忽略）
@@ -397,19 +393,16 @@ def submit_comment(project: str, submit_url: str, site_id: str, article_url: str
         # 检测登录
         rc, url, _ = _ab(["get", "url"], timeout=5)
         if 'wp-login.php' in url or '/login' in url.lower():
-            close_agent_browser()
             return _fail('需登录', '页面重定向到登录页', form_found=False, form_submitted=False)
 
         # 填写并提交表单
         form_filled = fill_comment_form(name, email, submit_url, comment)
 
         if not form_filled:
-            close_agent_browser()
             return _fail('失败', '找不到评论表单', form_found=False, form_submitted=False)
 
         # 检测提交结果
         result = detect_submission_result()
-        close_agent_browser()
 
         if result['found']:
             return {
@@ -426,8 +419,9 @@ def submit_comment(project: str, submit_url: str, site_id: str, article_url: str
             }
 
     except Exception as e:
-        close_agent_browser(True)
         return _fail('失败', str(e))
+    finally:
+        reset_agent_browser_daemon()
 
 
 def _ab_open(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:

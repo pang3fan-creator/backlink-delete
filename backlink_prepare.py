@@ -16,7 +16,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from backlink_common import DB_PATH, close_agent_browser, migrate_database, open_agent_browser, run_agent_browser
+from backlink_common import DB_PATH, migrate_database, open_agent_browser, reset_agent_browser_daemon, run_agent_browser
 
 
 def agent_browser(cmd: list[str], timeout: int = 15) -> tuple[int, str, str]:
@@ -101,6 +101,7 @@ def main():
 
     for i, (sid, url) in enumerate(pending, 1):
         print(f"[{i}/{len(pending)}] ID={sid}", end=" ... ", flush=True)
+        reset_agent_browser_daemon()
         summary = extract_article_summary(url)
         summary['id'] = sid
         summary['url'] = url
@@ -111,7 +112,7 @@ def main():
         else:
             print(f"❌ {summary['error']}")
 
-        close_agent_browser()
+        reset_agent_browser_daemon()
         if i < len(pending):
             time.sleep(0.5)
 
@@ -138,7 +139,7 @@ def main():
                 print(f"   URL: {r['url']}")
                 preview = r['preview'][:300]
                 print(f"   预览: {preview}...")
-                print(f"   → 评论建议方向：需围绕文章主题自然融入 schedule/planning 话题")
+                print(f"   → 评论建议方向：需围绕文章主题自然融入提交项目的使用场景")
             else:
                 print(f"\n#{r['id']} | ❌ 提取失败: {r['error']}")
                 print(f"   URL: {r['url']}")

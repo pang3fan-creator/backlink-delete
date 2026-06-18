@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sqlite3
+import time
 from pathlib import Path
 from typing import Optional, Union
 
@@ -124,6 +125,17 @@ def close_agent_browser(all_sessions: bool = False) -> None:
         subprocess.run(cmd, capture_output=True, timeout=10)
     except Exception:
         pass
+
+
+def reset_agent_browser_daemon() -> None:
+    """Fully reset agent-browser and Chrome processes so open --args take effect."""
+    close_agent_browser(True)
+    for pattern in ("agent-browser", "Chrome for Testing"):
+        try:
+            subprocess.run(["pkill", "-f", pattern], capture_output=True, timeout=10)
+        except Exception:
+            pass
+    time.sleep(2)
 
 
 def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:

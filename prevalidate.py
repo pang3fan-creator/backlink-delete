@@ -10,10 +10,10 @@ import time
 
 from backlink_common import (
     DB_PATH,
-    close_agent_browser,
     is_hard_worth_zero_reason,
     migrate_database,
     open_agent_browser,
+    reset_agent_browser_daemon,
     run_agent_browser,
 )
 
@@ -202,6 +202,7 @@ def main():
     for i, (sid, url) in enumerate(pending, 1):
         prefix = f"[{i}/{len(pending)}]"
         print(f"{prefix} {url[:70]}", end=" ... ", flush=True)
+        reset_agent_browser_daemon()
         result = check_site(url)
 
         if result["accessible"] and result["has_form"] and result["has_url_field"]:
@@ -214,10 +215,7 @@ def main():
             print(f"❌ {result['reason']}")
             failed.append((sid, url, result["reason"]))
 
-        try:
-            close_agent_browser()
-        except Exception:
-            pass
+        reset_agent_browser_daemon()
         if i < len(pending):
             time.sleep(0.5)
 

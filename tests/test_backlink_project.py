@@ -147,6 +147,7 @@ class BacklinkProjectTests(unittest.TestCase):
         self.assertTrue(callable(backlink_common.get_agent_browser_proxy))
         self.assertTrue(callable(backlink_common.run_agent_browser))
         self.assertTrue(callable(backlink_common.close_agent_browser))
+        self.assertTrue(callable(backlink_common.reset_agent_browser_daemon))
 
     def test_agent_browser_available_returns_bool(self):
         sys.path.insert(0, str(ROOT))

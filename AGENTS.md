@@ -73,9 +73,10 @@
    ```
 
 2. **评估 worth_submitting（如果为 NULL）**
-   - 用 agent-browser 打开页面
+   - 重置 daemon 后用 agent-browser 打开页面，确保 `--args` 生效：
    ```bash
    kill -9 $(ps aux | grep -v grep | grep -E "agent-browser|Chrome" | awk '{print $2}') 2>/dev/null; sleep 2
+   agent-browser open "<文章URL>" --args "--disable-blink-features=AutomationControlled"
    ```
    - **DOM 级检查**（用 `eval` 验证，不能只看页面文字）：
      ```
@@ -105,6 +106,11 @@
    db.commit()
    "
    ```
+   评估完成后关闭并重置浏览器：
+   ```bash
+   agent-browser close --all
+   pkill -f agent-browser && pkill -f "Chrome for Testing"; sleep 2
+   ```
 
 3. **预检 worth=1 站点（提交前必做）**
    ```bash
@@ -127,7 +133,11 @@
    ```
 
 5. **手动兜底（脚本失败时）**
-   - 用 agent-browser 手动打开、填表、提交
+   - 重置 daemon 后用 agent-browser 手动打开、填表、提交
+   ```bash
+   kill -9 $(ps aux | grep -v grep | grep -E "agent-browser|Chrome" | awk '{print $2}') 2>/dev/null; sleep 2
+   agent-browser open "<文章URL>" --args "--disable-blink-features=AutomationControlled"
+   ```
    - 记录结果：
    ```bash
    python3 backlink_db.py add-submission <site_id> <project_name> 已提交 \
@@ -136,6 +146,11 @@
      --comment "<评论内容>" \
      --comment-id "<评论ID>" \
      --reason "手动提交成功"
+   ```
+   手动兜底完成后关闭并重置浏览器：
+   ```bash
+   agent-browser close --all
+   pkill -f agent-browser && pkill -f "Chrome for Testing"; sleep 2
    ```
 
 ---
@@ -162,6 +177,7 @@
 
 - `backlink_common.py`：共享迁移、状态常量、agent-browser 命令、项目视图生成
 - `backlink_submit.py`：自动提交评论并写 `submissions` / 更新 worth
+- `backlink_prepare.py`：提交前提取文章内容，辅助生成贴合主题的评论
 - `prevalidate.py`：提交前 DOM 预检，只对硬障碍降级
 - `backlink_db.py`：仅保留 `stats` 和 `add-submission`；不要恢复 Excel import/export
 
