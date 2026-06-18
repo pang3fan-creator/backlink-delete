@@ -178,6 +178,7 @@
 - `backlink_common.py`：共享迁移、状态常量、agent-browser 命令、项目视图生成
 - `backlink_submit.py`：自动提交评论并写 `submissions` / 更新 worth
 - `backlink_prepare.py`：提交前提取文章内容，辅助生成贴合主题的评论
+- `ahrefs_dr_update.py`：批量查询 Ahrefs 免费 DR，并补写 `sites.weight`
 - `prevalidate.py`：提交前 DOM 预检，只对硬障碍降级
 - `backlink_db.py`：仅保留 `stats` 和 `add-submission`；不要恢复 Excel import/export
 
@@ -197,6 +198,9 @@ mkdir -p backups && cp backlinks.db backups/backlinks-$(date +%Y%m%d-%H%M%S).db
 
 # 预检 worth=1 站点（只自动标记硬障碍）
 python3 prevalidate.py --project "<project_name>" --apply
+
+# 补齐 Ahrefs DR（默认只更新 weight 为空的站点）
+python3 ahrefs_dr_update.py --limit 3 --dry-run
 
 # 重置 agent-browser daemon（卡死时使用）
 pkill -f agent-browser && pkill -f "Chrome for Testing" && sleep 2 && echo "已重置"

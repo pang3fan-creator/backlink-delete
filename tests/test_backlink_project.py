@@ -130,6 +130,136 @@ class PrevalidateLabelCheckTests(unittest.TestCase):
 
 
 class BacklinkProjectTests(unittest.TestCase):
+    def test_ahrefs_extract_domain_normalizes_site_urls(self):
+        sys.path.insert(0, str(ROOT))
+        import ahrefs_dr_update
+
+        self.assertEqual(ahrefs_dr_update.extract_domain("https://www.example.com/a"), "example.com")
+        self.assertEqual(ahrefs_dr_update.extract_domain("Blog.Example.com/post"), "blog.example.com")
+        self.assertIsNone(ahrefs_dr_update.extract_domain(""))
+        self.assertIsNone(ahrefs_dr_update.extract_domain("localhost"))
+
+    def test_ahrefs_parse_domain_rating(self):
+        sys.path.insert(0, str(ROOT))
+        import ahrefs_dr_update
+
+        self.assertEqual(
+            ahrefs_dr_update.parse_domain_rating('{"domain_rating":{"domain_rating":50.6}}'),
+            51,
+        )
+        self.assertIsNone(ahrefs_dr_update.parse_domain_rating('{"domain_rating":{}}'))
+        self.assertIsNone(ahrefs_dr_update.parse_domain_rating("not json"))
+
+    def test_ahrefs_dry_run_does_not_update_database(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "backlinks.db"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_url TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    site_type TEXT,
+                    weight INTEGER,
+                    notes TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    status TEXT DEFAULT '已提交',
+                    notes TEXT,
+                    updated_at TEXT,
+                    UNIQUE(site_id, project_name)
+                );
+                INSERT INTO sites (site_url, weight)
+                VALUES ('https://example.com/post', NULL);
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            sys.path.insert(0, str(ROOT))
+            import ahrefs_dr_update
+            import backlink_common
+
+            old_common_db = backlink_common.DB_PATH
+            old_ahrefs_db = ahrefs_dr_update.DB_PATH
+            old_fetch = ahrefs_dr_update.fetch_dr
+            try:
+                backlink_common.DB_PATH = db_path
+                ahrefs_dr_update.DB_PATH = db_path
+                ahrefs_dr_update.fetch_dr = lambda site_id, site_url, timeout: (site_id, site_url, 42, "ok")
+                updated = ahrefs_dr_update.run_update(limit=None, workers=1, timeout=1, dry_run=True)
+
+                conn = sqlite3.connect(db_path)
+                weight = conn.execute("SELECT weight FROM sites WHERE id = 1").fetchone()[0]
+                conn.close()
+            finally:
+                backlink_common.DB_PATH = old_common_db
+                ahrefs_dr_update.DB_PATH = old_ahrefs_db
+                ahrefs_dr_update.fetch_dr = old_fetch
+
+            self.assertEqual(updated, 1)
+            self.assertIsNone(weight)
+
+    def test_ahrefs_update_only_missing_weight(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "backlinks.db"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE sites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_url TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    site_type TEXT,
+                    weight INTEGER,
+                    notes TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE submissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id INTEGER NOT NULL,
+                    project_name TEXT NOT NULL,
+                    status TEXT DEFAULT '已提交',
+                    notes TEXT,
+                    updated_at TEXT,
+                    UNIQUE(site_id, project_name)
+                );
+                INSERT INTO sites (site_url, weight)
+                VALUES ('https://missing.example.com/post', NULL);
+                INSERT INTO sites (site_url, weight)
+                VALUES ('https://existing.example.com/post', 88);
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            sys.path.insert(0, str(ROOT))
+            import ahrefs_dr_update
+            import backlink_common
+
+            old_common_db = backlink_common.DB_PATH
+            old_ahrefs_db = ahrefs_dr_update.DB_PATH
+            old_fetch = ahrefs_dr_update.fetch_dr
+            try:
+                backlink_common.DB_PATH = db_path
+                ahrefs_dr_update.DB_PATH = db_path
+                ahrefs_dr_update.fetch_dr = lambda site_id, site_url, timeout: (site_id, site_url, 41, "ok")
+                updated = ahrefs_dr_update.run_update(limit=None, workers=1, timeout=1, dry_run=False)
+
+                conn = sqlite3.connect(db_path)
+                rows = conn.execute("SELECT id, weight FROM sites ORDER BY id").fetchall()
+                conn.close()
+            finally:
+                backlink_common.DB_PATH = old_common_db
+                ahrefs_dr_update.DB_PATH = old_ahrefs_db
+                ahrefs_dr_update.fetch_dr = old_fetch
+
+            self.assertEqual(updated, 1)
+            self.assertEqual(rows, [(1, 41), (2, 88)])
+
     def test_common_statuses_include_new_workflow_states(self):
         sys.path.insert(0, str(ROOT))
         import backlink_common
