@@ -83,7 +83,7 @@
      document.querySelector('input[name="url"], input[name="website"]')
      ```
    - 有评论表单 **且** 有 URL/Website 字段 → worth=1
-   - 页面不可访问 / 404 / SSL / 长期超时 → 本次提交记录用 `已失效`，同时 worth=0 并写 `skip_reason`
+   - 页面不可访问 / 404 / SSL / 长期超时 → worth=0，并写 `skip_reason`
    - 明确无 Website 字段 / 明确拒绝外部链接等硬障碍 → worth=0，并写 `skip_reason`
    - 登录墙 / 验证码 / Cloudflare / 自动化没找到表单 / 表单复杂 → 优先保留为 worth=1；如果信息还不足，再保留 NULL
    ```bash
@@ -145,6 +145,9 @@
 - **失败记录**：必须写 notes，说明具体原因
 - **提交证据**：博客评论要记录 `submit_url/target_url/comment_text/comment_id/result_reason`
 - **日志定位**：`logs/submission.log` 仅作追加审计留痕；主数据源仍是 SQLite 的 `submissions`
+- **提交后 worth 更新**：成功恢复 `worth=1` 并清空 `skip_reason`；失败只增加 `consecutive_failures`，硬障碍才降级
+- **失败计数无阈值**：`consecutive_failures` 只是观察值，不自动触发 worth 降级
+- **数据库备份**：迁移、批量更新 worth、手工 SQL 前先备份 `backlinks.db`
 - **一站点三项目**：错开时间提交，不要同时提交三个
 - **自动化绕过**：部分站点检测 headless 浏览器，`agent-browser open` 命令必须加 `--args "--disable-blink-features=AutomationControlled"`；仅设置 `AGENT_BROWSER_ARGS` 环境变量不生效，须作为 open 命令参数传入
 - **Daemon 持久化陷阱**：`agent-browser close --all` 只关闭标签页/session，**不会关闭 daemon 进程**。后续 `open` 命令复用已有 daemon，`--args` 被静默忽略。必须**完整杀掉 daemon 进程**后再 open，`--args` 才会生效。每次用 `backlink_submit.py` 提交前也必须先杀 daemon，否则后续调用仍然复用旧 daemon 导致 --args 无效。
@@ -170,6 +173,9 @@ python3 backlink_db.py stats
 
 # 回归测试
 python3 -m unittest tests/test_backlink_project.py
+
+# 备份数据库（迁移/批量更新/手工 SQL 前）
+mkdir -p backups && cp backlinks.db backups/backlinks-$(date +%Y%m%d-%H%M%S).db
 
 # 预检 worth=1 站点（只自动标记硬障碍）
 python3 prevalidate.py --project "<project_name>" --apply
