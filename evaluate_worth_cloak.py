@@ -80,7 +80,7 @@ def check_page(page, url):
     }
 
     try:
-        response = page.goto(url, timeout=25000, wait_until="domcontentloaded")
+        response = page.goto(url, timeout=25000, wait_until="commit")
     except PwTimeout:
         result["reason"] = "Page timeout"
         return result
@@ -106,6 +106,12 @@ def check_page(page, url):
     except Exception as e:
         result["reason"] = f"Navigation failed: {str(e)[:80]}"
         return result
+
+    # Let JS render (SPA forms, lazy-loaded content)
+    try:
+        page.wait_for_timeout(3000)
+    except Exception:
+        pass
 
     if "about:blank" in page.url:
         result["reason"] = "Page redirected to about:blank (anti-bot protection)"
